@@ -1,0 +1,104 @@
+[
+{
+  "directory": "/home/elevate/aladdin_ws/src/elevated_control/build",
+  "command": "/usr/bin/cc  -I/home/elevate/aladdin_ws/src/elevated_control/src/osal -I/home/elevate/aladdin_ws/src/elevated_control/src/osal/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/oshw/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/soem -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/elevated_soem.dir/src/soem/ethercatbase.c.o -c /home/elevate/aladdin_ws/src/elevated_control/src/soem/ethercatbase.c",
+  "file": "/home/elevate/aladdin_ws/src/elevated_control/src/soem/ethercatbase.c",
+  "output": "CMakeFiles/elevated_soem.dir/src/soem/ethercatbase.c.o"
+},
+{
+  "directory": "/home/elevate/aladdin_ws/src/elevated_control/build",
+  "command": "/usr/bin/cc  -I/home/elevate/aladdin_ws/src/elevated_control/src/osal -I/home/elevate/aladdin_ws/src/elevated_control/src/osal/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/oshw/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/soem -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/elevated_soem.dir/src/soem/ethercatcoe.c.o -c /home/elevate/aladdin_ws/src/elevated_control/src/soem/ethercatcoe.c",
+  "file": "/home/elevate/aladdin_ws/src/elevated_control/src/soem/ethercatcoe.c",
+  "output": "CMakeFiles/elevated_soem.dir/src/soem/ethercatcoe.c.o"
+},
+{
+  "directory": "/home/elevate/aladdin_ws/src/elevated_control/build",
+  "command": "/usr/bin/cc  -I/home/elevate/aladdin_ws/src/elevated_control/src/osal -I/home/elevate/aladdin_ws/src/elevated_control/src/osal/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/oshw/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/soem -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/elevated_soem.dir/src/soem/ethercatconfig.c.o -c /home/elevate/aladdin_ws/src/elevated_control/src/soem/ethercatconfig.c",
+  "file": "/home/elevate/aladdin_ws/src/elevated_control/src/soem/ethercatconfig.c",
+  "output": "CMakeFiles/elevated_soem.dir/src/soem/ethercatconfig.c.o"
+},
+{
+  "directory": "/home/elevate/aladdin_ws/src/elevated_control/build",
+  "command": "/usr/bin/cc  -I/home/elevate/aladdin_ws/src/elevated_control/src/osal -I/home/elevate/aladdin_ws/src/elevated_control/src/osal/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/oshw/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/soem -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/elevated_soem.dir/src/soem/ethercatdc.c.o -c /home/elevate/aladdin_ws/src/elevated_control/src/soem/ethercatdc.c",
+  "file": "/home/elevate/aladdin_ws/src/elevated_control/src/soem/ethercatdc.c",
+  "output": "CMakeFiles/elevated_soem.dir/src/soem/ethercatdc.c.o"
+},
+{
+  "directory": "/home/elevate/aladdin_ws/src/elevated_control/build",
+  "command": "/usr/bin/cc  -I/home/elevate/aladdin_ws/src/elevated_control/src/osal -I/home/elevate/aladdin_ws/src/elevated_control/src/osal/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/oshw/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/soem -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/elevated_soem.dir/src/soem/ethercateoe.c.o -c /home/elevate/aladdin_ws/src/elevated_control/src/soem/ethercateoe.c",
+  "file": "/home/elevate/aladdin_ws/src/elevated_control/src/soem/ethercateoe.c",
+  "output": "CMakeFiles/elevated_soem.dir/src/soem/ethercateoe.c.o"
+},
+{
+  "directory": "/home/elevate/aladdin_ws/src/elevated_control/build",
+  "command": "/usr/bin/cc  -I/home/elevate/aladdin_ws/src/elevated_control/src/osal -I/home/elevate/aladdin_ws/src/elevated_control/src/osal/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/oshw/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/soem -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/elevated_soem.dir/src/soem/ethercatfoe.c.o -c /home/elevate/aladdin_ws/src/elevated_control/src/soem/ethercatfoe.c",
+  "file": "/home/elevate/aladdin_ws/src/elevated_control/src/soem/ethercatfoe.c",
+  "output": "CMakeFiles/elevated_soem.dir/src/soem/ethercatfoe.c.o"
+},
+{
+  "directory": "/home/elevate/aladdin_ws/src/elevated_control/build",
+  "command": "/usr/bin/cc  -I/home/elevate/aladdin_ws/src/elevated_control/src/osal -I/home/elevate/aladdin_ws/src/elevated_control/src/osal/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/oshw/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/soem -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/elevated_soem.dir/src/soem/ethercatmain.c.o -c /home/elevate/aladdin_ws/src/elevated_control/src/soem/ethercatmain.c",
+  "file": "/home/elevate/aladdin_ws/src/elevated_control/src/soem/ethercatmain.c",
+  "output": "CMakeFiles/elevated_soem.dir/src/soem/ethercatmain.c.o"
+},
+{
+  "directory": "/home/elevate/aladdin_ws/src/elevated_control/build",
+  "command": "/usr/bin/cc  -I/home/elevate/aladdin_ws/src/elevated_control/src/osal -I/home/elevate/aladdin_ws/src/elevated_control/src/osal/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/oshw/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/soem -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/elevated_soem.dir/src/soem/ethercatprint.c.o -c /home/elevate/aladdin_ws/src/elevated_control/src/soem/ethercatprint.c",
+  "file": "/home/elevate/aladdin_ws/src/elevated_control/src/soem/ethercatprint.c",
+  "output": "CMakeFiles/elevated_soem.dir/src/soem/ethercatprint.c.o"
+},
+{
+  "directory": "/home/elevate/aladdin_ws/src/elevated_control/build",
+  "command": "/usr/bin/cc  -I/home/elevate/aladdin_ws/src/elevated_control/src/osal -I/home/elevate/aladdin_ws/src/elevated_control/src/osal/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/oshw/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/soem -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/elevated_soem.dir/src/soem/ethercatsoe.c.o -c /home/elevate/aladdin_ws/src/elevated_control/src/soem/ethercatsoe.c",
+  "file": "/home/elevate/aladdin_ws/src/elevated_control/src/soem/ethercatsoe.c",
+  "output": "CMakeFiles/elevated_soem.dir/src/soem/ethercatsoe.c.o"
+},
+{
+  "directory": "/home/elevate/aladdin_ws/src/elevated_control/build",
+  "command": "/usr/bin/cc  -I/home/elevate/aladdin_ws/src/elevated_control/src/osal -I/home/elevate/aladdin_ws/src/elevated_control/src/osal/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/oshw/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/soem -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/elevated_soem.dir/src/osal/linux/osal.c.o -c /home/elevate/aladdin_ws/src/elevated_control/src/osal/linux/osal.c",
+  "file": "/home/elevate/aladdin_ws/src/elevated_control/src/osal/linux/osal.c",
+  "output": "CMakeFiles/elevated_soem.dir/src/osal/linux/osal.c.o"
+},
+{
+  "directory": "/home/elevate/aladdin_ws/src/elevated_control/build",
+  "command": "/usr/bin/cc  -I/home/elevate/aladdin_ws/src/elevated_control/src/osal -I/home/elevate/aladdin_ws/src/elevated_control/src/osal/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/oshw/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/soem -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/elevated_soem.dir/src/oshw/linux/nicdrv.c.o -c /home/elevate/aladdin_ws/src/elevated_control/src/oshw/linux/nicdrv.c",
+  "file": "/home/elevate/aladdin_ws/src/elevated_control/src/oshw/linux/nicdrv.c",
+  "output": "CMakeFiles/elevated_soem.dir/src/oshw/linux/nicdrv.c.o"
+},
+{
+  "directory": "/home/elevate/aladdin_ws/src/elevated_control/build",
+  "command": "/usr/bin/cc  -I/home/elevate/aladdin_ws/src/elevated_control/src/osal -I/home/elevate/aladdin_ws/src/elevated_control/src/osal/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/oshw/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/soem -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/elevated_soem.dir/src/oshw/linux/oshw.c.o -c /home/elevate/aladdin_ws/src/elevated_control/src/oshw/linux/oshw.c",
+  "file": "/home/elevate/aladdin_ws/src/elevated_control/src/oshw/linux/oshw.c",
+  "output": "CMakeFiles/elevated_soem.dir/src/oshw/linux/oshw.c.o"
+},
+{
+  "directory": "/home/elevate/aladdin_ws/src/elevated_control/build",
+  "command": "/usr/bin/c++ -DFMT_SHARED -DSPDLOG_COMPILED_LIB -DSPDLOG_FMT_EXTERNAL -DSPDLOG_SHARED_LIB -Delevated_control_EXPORTS -I/home/elevate/aladdin_ws/src/elevated_control/include -I/home/elevate/aladdin_ws/src/elevated_control/src/osal -I/home/elevate/aladdin_ws/src/elevated_control/src/osal/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/oshw/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/soem -std=gnu++23 -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/elevated_control.dir/src/arm_interface.cpp.o -c /home/elevate/aladdin_ws/src/elevated_control/src/arm_interface.cpp",
+  "file": "/home/elevate/aladdin_ws/src/elevated_control/src/arm_interface.cpp",
+  "output": "CMakeFiles/elevated_control.dir/src/arm_interface.cpp.o"
+},
+{
+  "directory": "/home/elevate/aladdin_ws/src/elevated_control/build",
+  "command": "/usr/bin/c++ -DFMT_SHARED -DSPDLOG_COMPILED_LIB -DSPDLOG_FMT_EXTERNAL -DSPDLOG_SHARED_LIB -Delevated_control_EXPORTS -I/home/elevate/aladdin_ws/src/elevated_control/include -I/home/elevate/aladdin_ws/src/elevated_control/src/osal -I/home/elevate/aladdin_ws/src/elevated_control/src/osal/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/oshw/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/soem -std=gnu++23 -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/elevated_control.dir/src/joint_admittance.cpp.o -c /home/elevate/aladdin_ws/src/elevated_control/src/joint_admittance.cpp",
+  "file": "/home/elevate/aladdin_ws/src/elevated_control/src/joint_admittance.cpp",
+  "output": "CMakeFiles/elevated_control.dir/src/joint_admittance.cpp.o"
+},
+{
+  "directory": "/home/elevate/aladdin_ws/src/elevated_control/build",
+  "command": "/usr/bin/c++ -DFMT_SHARED -DSPDLOG_COMPILED_LIB -DSPDLOG_FMT_EXTERNAL -DSPDLOG_SHARED_LIB -Delevated_control_EXPORTS -I/home/elevate/aladdin_ws/src/elevated_control/include -I/home/elevate/aladdin_ws/src/elevated_control/src/osal -I/home/elevate/aladdin_ws/src/elevated_control/src/osal/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/oshw/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/soem -std=gnu++23 -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/elevated_control.dir/src/velocity_filter.cpp.o -c /home/elevate/aladdin_ws/src/elevated_control/src/velocity_filter.cpp",
+  "file": "/home/elevate/aladdin_ws/src/elevated_control/src/velocity_filter.cpp",
+  "output": "CMakeFiles/elevated_control.dir/src/velocity_filter.cpp.o"
+},
+{
+  "directory": "/home/elevate/aladdin_ws/src/elevated_control/build",
+  "command": "/usr/bin/c++ -DFMT_SHARED -DSPDLOG_COMPILED_LIB -DSPDLOG_FMT_EXTERNAL -DSPDLOG_SHARED_LIB -Delevated_control_EXPORTS -I/home/elevate/aladdin_ws/src/elevated_control/include -I/home/elevate/aladdin_ws/src/elevated_control/src/osal -I/home/elevate/aladdin_ws/src/elevated_control/src/osal/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/oshw/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/soem -std=gnu++23 -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/elevated_control.dir/src/config_parsing.cpp.o -c /home/elevate/aladdin_ws/src/elevated_control/src/config_parsing.cpp",
+  "file": "/home/elevate/aladdin_ws/src/elevated_control/src/config_parsing.cpp",
+  "output": "CMakeFiles/elevated_control.dir/src/config_parsing.cpp.o"
+},
+{
+  "directory": "/home/elevate/aladdin_ws/src/elevated_control/build",
+  "command": "/usr/bin/c++ -DFMT_SHARED -DSPDLOG_COMPILED_LIB -DSPDLOG_FMT_EXTERNAL -DSPDLOG_SHARED_LIB -Delevated_control_EXPORTS -I/home/elevate/aladdin_ws/src/elevated_control/include -I/home/elevate/aladdin_ws/src/elevated_control/src/osal -I/home/elevate/aladdin_ws/src/elevated_control/src/osal/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/oshw/linux -I/home/elevate/aladdin_ws/src/elevated_control/src/soem -std=gnu++23 -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/elevated_control.dir/src/dynamic_sim.cpp.o -c /home/elevate/aladdin_ws/src/elevated_control/src/dynamic_sim.cpp",
+  "file": "/home/elevate/aladdin_ws/src/elevated_control/src/dynamic_sim.cpp",
+  "output": "CMakeFiles/elevated_control.dir/src/dynamic_sim.cpp.o"
+}
+]
