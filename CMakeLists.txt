@@ -56,6 +56,10 @@ target_link_libraries(elevated_control
   PRIVATE elevated_soem yaml-cpp pthread rt
 )
 
+# ---------- Examples ----------
+add_executable(basic_usage examples/basic_usage.cpp)
+target_link_libraries(basic_usage PRIVATE elevated_control)
+
 # ---------- Install ----------
 install(
   DIRECTORY include/
