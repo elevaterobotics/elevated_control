@@ -14,6 +14,8 @@
 #include <thread>
 #include <vector>
 
+#include <spdlog/spdlog.h>
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
 #include "ethercat.h"
