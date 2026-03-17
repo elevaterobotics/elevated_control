@@ -33,6 +33,22 @@ The build produces two artifacts:
 - `libelevated_soem.a` -- static EtherCAT master library (SOEM/OSAL/OSHW)
 - `libelevated_control.so` -- shared library with the `ArmInterface` class
 
+## Tests
+
+Tests are built by default and require GTest (`libgtest-dev` on Ubuntu). To
+build and run them:
+
+```bash
+sudo apt install libgtest-dev  # if not already installed
+cd elevated_control
+mkdir build && cd build
+cmake .. -DBUILD_TESTING=ON
+make -j$(nproc)
+ctest --output-on-failure
+```
+
+To disable tests, configure with `-DBUILD_TESTING=OFF`.
+
 ## Usage
 
 Link against `elevated_control` in your CMake project:
