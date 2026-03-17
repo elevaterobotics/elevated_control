@@ -95,26 +95,54 @@ ElevateConfig ParseElevateConfig(const std::string& elevate_config_file) {
 
     YAML::Node button_config = elevate_config["button_config"];
 
-    if (!button_config["analog_input_midpoint"]) {
-      spdlog::error("Missing 'analog_input_midpoint' in button config");
+    if (!button_config["roll_dial"]) {
+      spdlog::error("Missing 'roll_dial' in button config");
       return ElevateConfig{};
     }
-    config.button_config.analog_input_midpoint =
-        button_config["analog_input_midpoint"].as<std::int32_t>();
+    {
+      YAML::Node roll_config = button_config["roll_dial"];
+      if (!roll_config["min"] || !roll_config["center"] ||
+          !roll_config["max"]) {
+        spdlog::error(
+            "roll_dial must have 'min', 'center', and 'max' fields");
+        return ElevateConfig{};
+      }
+      config.button_config.roll_dial.min =
+          roll_config["min"].as<std::int32_t>();
+      config.button_config.roll_dial.center =
+          roll_config["center"].as<std::int32_t>();
+      config.button_config.roll_dial.max =
+          roll_config["max"].as<std::int32_t>();
+    }
 
-    if (!button_config["wrist_dial_min"]) {
-      spdlog::error("Missing 'wrist_dial_min' in elevate config");
+    if (!button_config["pitch_dial"]) {
+      spdlog::error("Missing 'pitch_dial' in button config");
       return ElevateConfig{};
     }
-    config.button_config.wrist_dial_min =
-        button_config["wrist_dial_min"].as<std::int32_t>();
+    {
+      YAML::Node pitch_config = button_config["pitch_dial"];
+      if (!pitch_config["min"] || !pitch_config["center"] ||
+          !pitch_config["max"]) {
+        spdlog::error(
+            "pitch_dial must have 'min', 'center', and 'max' fields");
+        return ElevateConfig{};
+      }
+      config.button_config.pitch_dial.min =
+          pitch_config["min"].as<std::int32_t>();
+      config.button_config.pitch_dial.center =
+          pitch_config["center"].as<std::int32_t>();
+      config.button_config.pitch_dial.max =
+          pitch_config["max"].as<std::int32_t>();
+    }
 
-    if (!button_config["wrist_dial_max"]) {
-      spdlog::error("Missing 'wrist_dial_max' in elevate config");
-      return ElevateConfig{};
-    }
-    config.button_config.wrist_dial_max =
-        button_config["wrist_dial_max"].as<std::int32_t>();
+    spdlog::info("Roll dial calibration: min={}, center={}, max={}",
+                 config.button_config.roll_dial.min,
+                 config.button_config.roll_dial.center,
+                 config.button_config.roll_dial.max);
+    spdlog::info("Pitch dial calibration: min={}, center={}, max={}",
+                 config.button_config.pitch_dial.min,
+                 config.button_config.pitch_dial.center,
+                 config.button_config.pitch_dial.max);
 
     if (!elevate_config["spring_setpoints"]) {
       spdlog::error("Missing 'spring_setpoints' in elevate yaml");
@@ -159,6 +187,40 @@ ElevateConfig ParseElevateConfig(const std::string& elevate_config_file) {
     }
     config.torque_sign.wrist_yaw =
         elevate_config["torque_sign"]["wrist_yaw"].as<std::int32_t>();
+
+    if (!elevate_config["position_sign"]) {
+      spdlog::error("Missing 'position_sign' in elevate yaml");
+      return ElevateConfig{};
+    }
+    if (!elevate_config["position_sign"]["inertial"]) {
+      spdlog::error("Missing 'inertial' in position_sign config");
+      return ElevateConfig{};
+    }
+    config.position_sign.inertial =
+        elevate_config["position_sign"]["inertial"].as<std::int32_t>();
+    if (!elevate_config["position_sign"]["wrist_pitch"]) {
+      spdlog::error("Missing 'wrist_pitch' in position_sign config");
+      return ElevateConfig{};
+    }
+    config.position_sign.wrist_pitch =
+        elevate_config["position_sign"]["wrist_pitch"].as<std::int32_t>();
+
+    if (!elevate_config["velocity_sign"]) {
+      spdlog::error("Missing 'velocity_sign' in elevate yaml");
+      return ElevateConfig{};
+    }
+    if (!elevate_config["velocity_sign"]["inertial"]) {
+      spdlog::error("Missing 'inertial' in velocity_sign config");
+      return ElevateConfig{};
+    }
+    config.velocity_sign.inertial =
+        elevate_config["velocity_sign"]["inertial"].as<std::int32_t>();
+    if (!elevate_config["velocity_sign"]["wrist_pitch"]) {
+      spdlog::error("Missing 'wrist_pitch' in velocity_sign config");
+      return ElevateConfig{};
+    }
+    config.velocity_sign.wrist_pitch =
+        elevate_config["velocity_sign"]["wrist_pitch"].as<std::int32_t>();
   } catch (const YAML::Exception& e) {
     spdlog::error("Failed to parse elevate config YAML: {}", e.what());
     return ElevateConfig{};
@@ -178,45 +240,47 @@ bool ValidateJointLimits(const JointLimitsConfig& config) {
   return true;
 }
 
-bool ValidateButtonConfig(const ButtonConfig& config) {
-  if (config.wrist_dial_min >= config.wrist_dial_max) {
-    spdlog::error("wrist_dial_min ({}) must be less than wrist_dial_max ({})",
-                  config.wrist_dial_min, config.wrist_dial_max);
+bool ValidateDialConfig(const DialConfig& config, const std::string& name) {
+  if (config.min >= config.max) {
+    spdlog::error("{}: min ({}) must be less than max ({})",
+                  name, config.min, config.max);
     return false;
   }
 
-  if ((config.wrist_dial_min < 0) || (config.wrist_dial_max <= 0) ||
-      (config.analog_input_midpoint <= 0)) {
-    spdlog::error(
-        "wrist_dial_min ({}), wrist_dial_max ({}), and "
-        "analog_input_midpoint ({}) must be greater than 0",
-        config.wrist_dial_min, config.wrist_dial_max,
-        config.analog_input_midpoint);
+  if ((config.min < 0) || (config.max <= 0) || (config.center <= 0)) {
+    spdlog::error("{}: min ({}), max ({}), and center ({}) must be > 0",
+                  name, config.min, config.max, config.center);
     return false;
   }
 
-  if ((config.analog_input_midpoint < config.wrist_dial_min) ||
-      (config.analog_input_midpoint > config.wrist_dial_max)) {
-    spdlog::error(
-        "analog_input_midpoint ({}) must be between wrist_dial_min ({}) and "
-        "wrist_dial_max ({})",
-        config.analog_input_midpoint, config.wrist_dial_min,
-        config.wrist_dial_max);
+  if ((config.center < config.min) || (config.center > config.max)) {
+    spdlog::error("{}: center ({}) must be between min ({}) and max ({})",
+                  name, config.center, config.min, config.max);
     return false;
   }
 
   return true;
 }
 
+bool ValidateButtonConfig(const ButtonConfig& config) {
+  if (!ValidateDialConfig(config.roll_dial, "roll_dial")) {
+    return false;
+  }
+  if (!ValidateDialConfig(config.pitch_dial, "pitch_dial")) {
+    return false;
+  }
+  return true;
+}
+
 bool ValidateSpringSetpoints(const SpringSetpointsConfig& config) {
   if ((config.spring_setpoint_unloaded < 100) ||
-      (config.spring_setpoint_unloaded > 1000)) {
+      (config.spring_setpoint_unloaded > 50000)) {
     spdlog::error("Invalid spring_setpoint_unloaded in yaml config");
     return false;
   }
 
   if ((config.spring_setpoint_loaded < 100) ||
-      (config.spring_setpoint_loaded > 3900)) {
+      (config.spring_setpoint_loaded > 50000)) {
     spdlog::error("Invalid spring_setpoint_loaded in yaml config");
     return false;
   }
@@ -232,6 +296,34 @@ bool ValidateTorqueSignsConfig(const TorqueSignConfig& config) {
     return false;
   }
 
+  return true;
+}
+
+bool ValidatePositionSignsConfig(const PositionSignConfig& config) {
+  if ((config.inertial != 1) && (config.inertial != -1)) {
+    spdlog::error(
+        "Invalid position_sign in yaml config: inertial must be 1 or -1");
+    return false;
+  }
+  if ((config.wrist_pitch != 1) && (config.wrist_pitch != -1)) {
+    spdlog::error(
+        "Invalid position_sign in yaml config: wrist_pitch must be 1 or -1");
+    return false;
+  }
+  return true;
+}
+
+bool ValidateVelocitySignsConfig(const VelocitySignConfig& config) {
+  if ((config.inertial != 1) && (config.inertial != -1)) {
+    spdlog::error(
+        "Invalid velocity_sign in yaml config: inertial must be 1 or -1");
+    return false;
+  }
+  if ((config.wrist_pitch != 1) && (config.wrist_pitch != -1)) {
+    spdlog::error(
+        "Invalid velocity_sign in yaml config: wrist_pitch must be 1 or -1");
+    return false;
+  }
   return true;
 }
 
