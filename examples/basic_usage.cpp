@@ -3,8 +3,8 @@
 int main() {
   elevated_control::ArmInterface::Config cfg;
   cfg.network_interface = "eno0";
-  cfg.joint_limits_yaml = "/path/to/joint_limits.yaml";
-  cfg.elevate_config_yaml = "/path/to/elevate_config.yaml";
+  cfg.joint_limits_yaml = "joint_limits.yaml";
+  cfg.elevate_config_yaml = "elevate_config.yaml";
 
   elevated_control::ArmInterface arm(cfg);
 
