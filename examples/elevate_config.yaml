@@ -1,0 +1,24 @@
+button_config:
+  roll_dial:
+    min: 6320
+    center: 32845
+    max: 59230
+  pitch_dial:
+    min: 5993
+    center: 32826
+    max: 59541
+spring_setpoints:
+  unloaded: 759
+  loaded: 1442
+# TODO: This is a hack to account for Synapticon torques sometimes having different signs than velocities
+# Used in braking for soft joint limits
+torque_sign:
+  yaw1: 1
+  yaw2: 1
+  wrist_yaw: 1
+position_sign:
+  inertial: -1
+  wrist_pitch: -1
+velocity_sign:
+  inertial: -1
+  wrist_pitch: -1
