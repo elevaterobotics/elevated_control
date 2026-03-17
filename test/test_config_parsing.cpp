@@ -132,16 +132,27 @@ joint_limits:
 TEST_F(ConfigParsingTest, ParseElevateConfigValidFile) {
   std::string yaml_content = R"(
 button_config:
-  analog_input_midpoint: 2048
-  wrist_dial_min: 100
-  wrist_dial_max: 3000
+  roll_dial:
+    min: 6320
+    center: 32845
+    max: 59230
+  pitch_dial:
+    min: 5993
+    center: 32826
+    max: 59541
 spring_setpoints:
-  unloaded: 32000
-  loaded: 50000
+  unloaded: 759
+  loaded: 1442
 torque_sign:
   yaw1: 1
   yaw2: -1
   wrist_yaw: 1
+position_sign:
+  inertial: -1
+  wrist_pitch: -1
+velocity_sign:
+  inertial: -1
+  wrist_pitch: -1
 )";
 
   std::string filepath =
@@ -149,23 +160,37 @@ torque_sign:
 
   auto config = elevated_control::ParseElevateConfig(filepath);
 
-  EXPECT_EQ(config.button_config.analog_input_midpoint, 2048);
-  EXPECT_EQ(config.button_config.wrist_dial_min, 100);
-  EXPECT_EQ(config.button_config.wrist_dial_max, 3000);
+  EXPECT_EQ(config.button_config.roll_dial.min, 6320);
+  EXPECT_EQ(config.button_config.roll_dial.center, 32845);
+  EXPECT_EQ(config.button_config.roll_dial.max, 59230);
+  EXPECT_EQ(config.button_config.pitch_dial.min, 5993);
+  EXPECT_EQ(config.button_config.pitch_dial.center, 32826);
+  EXPECT_EQ(config.button_config.pitch_dial.max, 59541);
 
-  EXPECT_EQ(config.spring_setpoints.spring_setpoint_unloaded, 32000);
-  EXPECT_EQ(config.spring_setpoints.spring_setpoint_loaded, 50000);
+  EXPECT_EQ(config.spring_setpoints.spring_setpoint_unloaded, 759);
+  EXPECT_EQ(config.spring_setpoints.spring_setpoint_loaded, 1442);
+
+  EXPECT_EQ(config.position_sign.inertial, -1);
+  EXPECT_EQ(config.position_sign.wrist_pitch, -1);
+  EXPECT_EQ(config.velocity_sign.inertial, -1);
+  EXPECT_EQ(config.velocity_sign.wrist_pitch, -1);
 }
 
 TEST_F(ConfigParsingTest, ParseElevateConfigMissingButtonConfig) {
   std::string yaml_content = R"(
 spring_setpoints:
-  unloaded: 32000
-  loaded: 50000
+  unloaded: 759
+  loaded: 1442
 torque_sign:
   yaw1: 1
   yaw2: -1
   wrist_yaw: 1
+position_sign:
+  inertial: -1
+  wrist_pitch: -1
+velocity_sign:
+  inertial: -1
+  wrist_pitch: -1
 )";
 
   std::string filepath =
@@ -173,21 +198,35 @@ torque_sign:
 
   auto config = elevated_control::ParseElevateConfig(filepath);
 
-  EXPECT_EQ(config.button_config.analog_input_midpoint, 0);
-  EXPECT_EQ(config.button_config.wrist_dial_min, 0);
-  EXPECT_EQ(config.button_config.wrist_dial_max, 0);
+  EXPECT_EQ(config.button_config.roll_dial.min, 0);
+  EXPECT_EQ(config.button_config.roll_dial.center, 0);
+  EXPECT_EQ(config.button_config.roll_dial.max, 0);
+  EXPECT_EQ(config.button_config.pitch_dial.min, 0);
+  EXPECT_EQ(config.button_config.pitch_dial.center, 0);
+  EXPECT_EQ(config.button_config.pitch_dial.max, 0);
 }
 
 TEST_F(ConfigParsingTest, ParseElevateConfigMissingSpringSetpoints) {
   std::string yaml_content = R"(
 button_config:
-  analog_input_midpoint: 2048
-  wrist_dial_min: 100
-  wrist_dial_max: 3000
+  roll_dial:
+    min: 6320
+    center: 32845
+    max: 59230
+  pitch_dial:
+    min: 5993
+    center: 32826
+    max: 59541
 torque_sign:
   yaw1: 1
   yaw2: -1
   wrist_yaw: 1
+position_sign:
+  inertial: -1
+  wrist_pitch: -1
+velocity_sign:
+  inertial: -1
+  wrist_pitch: -1
 )";
 
   std::string filepath =
@@ -204,7 +243,7 @@ TEST_F(ConfigParsingTest, ParseElevateConfigNonExistentFile) {
 
   auto config = elevated_control::ParseElevateConfig(filepath);
 
-  EXPECT_EQ(config.button_config.analog_input_midpoint, 0);
+  EXPECT_EQ(config.button_config.roll_dial.center, 0);
   EXPECT_EQ(config.spring_setpoints.spring_setpoint_unloaded, 0);
 }
 
@@ -229,50 +268,56 @@ TEST_F(ConfigParsingTest, ValidateJointLimitsEmptyConfig) {
   EXPECT_FALSE(result);
 }
 
+// -- ValidateDialConfig tests --
+
+TEST_F(ConfigParsingTest, ValidateDialConfigValid) {
+  elevated_control::DialConfig config{100, 2048, 3000};
+
+  EXPECT_TRUE(elevated_control::ValidateDialConfig(config, "test_dial"));
+}
+
+TEST_F(ConfigParsingTest, ValidateDialConfigMinGeMax) {
+  elevated_control::DialConfig config{3000, 2048, 100};
+
+  EXPECT_FALSE(elevated_control::ValidateDialConfig(config, "test_dial"));
+}
+
+TEST_F(ConfigParsingTest, ValidateDialConfigNegativeCenter) {
+  elevated_control::DialConfig config{100, -100, 3000};
+
+  EXPECT_FALSE(elevated_control::ValidateDialConfig(config, "test_dial"));
+}
+
+TEST_F(ConfigParsingTest, ValidateDialConfigCenterOutOfRange) {
+  elevated_control::DialConfig config{100, 50, 3000};
+
+  EXPECT_FALSE(elevated_control::ValidateDialConfig(config, "test_dial"));
+}
+
 // -- ValidateButtonConfig tests --
 
 TEST_F(ConfigParsingTest, ValidateButtonConfigValidConfig) {
   elevated_control::ButtonConfig config;
-  config.analog_input_midpoint = 2048;
-  config.wrist_dial_min = 100;
-  config.wrist_dial_max = 3000;
+  config.roll_dial = {6320, 32845, 59230};
+  config.pitch_dial = {5993, 32826, 59541};
 
-  bool result = elevated_control::ValidateButtonConfig(config);
-
-  EXPECT_TRUE(result);
+  EXPECT_TRUE(elevated_control::ValidateButtonConfig(config));
 }
 
-TEST_F(ConfigParsingTest, ValidateButtonConfigInvalidDialRange) {
+TEST_F(ConfigParsingTest, ValidateButtonConfigInvalidRollDial) {
   elevated_control::ButtonConfig config;
-  config.analog_input_midpoint = 2048;
-  config.wrist_dial_min = 3000;
-  config.wrist_dial_max = 100;
+  config.roll_dial = {59230, 32845, 6320};
+  config.pitch_dial = {5993, 32826, 59541};
 
-  bool result = elevated_control::ValidateButtonConfig(config);
-
-  EXPECT_FALSE(result);
+  EXPECT_FALSE(elevated_control::ValidateButtonConfig(config));
 }
 
-TEST_F(ConfigParsingTest, ValidateButtonConfigNegativeValues) {
+TEST_F(ConfigParsingTest, ValidateButtonConfigInvalidPitchDial) {
   elevated_control::ButtonConfig config;
-  config.analog_input_midpoint = -100;
-  config.wrist_dial_min = 100;
-  config.wrist_dial_max = 3000;
+  config.roll_dial = {6320, 32845, 59230};
+  config.pitch_dial = {59541, 32826, 5993};
 
-  bool result = elevated_control::ValidateButtonConfig(config);
-
-  EXPECT_FALSE(result);
-}
-
-TEST_F(ConfigParsingTest, ValidateButtonConfigZeroValues) {
-  elevated_control::ButtonConfig config;
-  config.analog_input_midpoint = 0;
-  config.wrist_dial_min = 100;
-  config.wrist_dial_max = 3000;
-
-  bool result = elevated_control::ValidateButtonConfig(config);
-
-  EXPECT_FALSE(result);
+  EXPECT_FALSE(elevated_control::ValidateButtonConfig(config));
 }
 
 // -- ValidateSpringSetpoints tests --
@@ -299,7 +344,7 @@ TEST_F(ConfigParsingTest, ValidateSpringSetpointsInvalidUnloadedTooLow) {
 
 TEST_F(ConfigParsingTest, ValidateSpringSetpointsInvalidUnloadedTooHigh) {
   elevated_control::SpringSetpointsConfig config;
-  config.spring_setpoint_unloaded = 1001;
+  config.spring_setpoint_unloaded = 50001;
   config.spring_setpoint_loaded = 2000;
 
   bool result = elevated_control::ValidateSpringSetpoints(config);
@@ -320,7 +365,7 @@ TEST_F(ConfigParsingTest, ValidateSpringSetpointsInvalidLoadedTooLow) {
 TEST_F(ConfigParsingTest, ValidateSpringSetpointsInvalidLoadedTooHigh) {
   elevated_control::SpringSetpointsConfig config;
   config.spring_setpoint_unloaded = 200;
-  config.spring_setpoint_loaded = 3901;
+  config.spring_setpoint_loaded = 50001;
 
   bool result = elevated_control::ValidateSpringSetpoints(config);
 
@@ -330,7 +375,7 @@ TEST_F(ConfigParsingTest, ValidateSpringSetpointsInvalidLoadedTooHigh) {
 TEST_F(ConfigParsingTest, ValidateSpringSetpointsBoundaryValues) {
   elevated_control::SpringSetpointsConfig config;
   config.spring_setpoint_unloaded = 100;
-  config.spring_setpoint_loaded = 3900;
+  config.spring_setpoint_loaded = 50000;
 
   bool result = elevated_control::ValidateSpringSetpoints(config);
 
@@ -436,4 +481,56 @@ TEST_F(ConfigParsingTest, ValidateTorqueSignsConfigInvalidWristYawTwo) {
   bool result = elevated_control::ValidateTorqueSignsConfig(config);
 
   EXPECT_FALSE(result);
+}
+
+// -- ValidatePositionSignsConfig tests --
+
+TEST_F(ConfigParsingTest, ValidatePositionSignsConfigValid) {
+  elevated_control::PositionSignConfig config;
+  config.inertial = -1;
+  config.wrist_pitch = -1;
+
+  EXPECT_TRUE(elevated_control::ValidatePositionSignsConfig(config));
+}
+
+TEST_F(ConfigParsingTest, ValidatePositionSignsConfigInvalidInertial) {
+  elevated_control::PositionSignConfig config;
+  config.inertial = 0;
+  config.wrist_pitch = 1;
+
+  EXPECT_FALSE(elevated_control::ValidatePositionSignsConfig(config));
+}
+
+TEST_F(ConfigParsingTest, ValidatePositionSignsConfigInvalidWristPitch) {
+  elevated_control::PositionSignConfig config;
+  config.inertial = 1;
+  config.wrist_pitch = 2;
+
+  EXPECT_FALSE(elevated_control::ValidatePositionSignsConfig(config));
+}
+
+// -- ValidateVelocitySignsConfig tests --
+
+TEST_F(ConfigParsingTest, ValidateVelocitySignsConfigValid) {
+  elevated_control::VelocitySignConfig config;
+  config.inertial = -1;
+  config.wrist_pitch = -1;
+
+  EXPECT_TRUE(elevated_control::ValidateVelocitySignsConfig(config));
+}
+
+TEST_F(ConfigParsingTest, ValidateVelocitySignsConfigInvalidInertial) {
+  elevated_control::VelocitySignConfig config;
+  config.inertial = 0;
+  config.wrist_pitch = 1;
+
+  EXPECT_FALSE(elevated_control::ValidateVelocitySignsConfig(config));
+}
+
+TEST_F(ConfigParsingTest, ValidateVelocitySignsConfigInvalidWristPitch) {
+  elevated_control::VelocitySignConfig config;
+  config.inertial = 1;
+  config.wrist_pitch = 2;
+
+  EXPECT_FALSE(elevated_control::ValidateVelocitySignsConfig(config));
 }

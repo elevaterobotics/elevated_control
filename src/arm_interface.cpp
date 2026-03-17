@@ -146,7 +146,9 @@ std::expected<void, Error> ArmInterface::Initialize() {
     elevate_config_ = ParseElevateConfig(config_.elevate_config_yaml);
     if (!ValidateButtonConfig(elevate_config_.button_config) ||
         !ValidateSpringSetpoints(elevate_config_.spring_setpoints) ||
-        !ValidateTorqueSignsConfig(elevate_config_.torque_sign)) {
+        !ValidateTorqueSignsConfig(elevate_config_.torque_sign) ||
+        !ValidatePositionSignsConfig(elevate_config_.position_sign) ||
+        !ValidateVelocitySignsConfig(elevate_config_.velocity_sign)) {
       return std::unexpected(
           Error{ErrorCode::kInvalidArgument, "Invalid elevate config"});
     }
@@ -1248,18 +1250,19 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
             static_cast<std::uint16_t>(kWristRollIdx + 1), 0x2402, 0x00);
         if (!wrist_pitch_dial_value) {
           wrist_pitch_dial_value =
-              elevate_config_.button_config.analog_input_midpoint;
+              elevate_config_.button_config.pitch_dial.center;
         }
 
         *wrist_pitch_dial_value = std::clamp(
-            *wrist_pitch_dial_value, elevate_config_.button_config.wrist_dial_min,
-            elevate_config_.button_config.wrist_dial_max);
+            *wrist_pitch_dial_value,
+            elevate_config_.button_config.pitch_dial.min,
+            elevate_config_.button_config.pitch_dial.max);
         float normalized_dial =
             -static_cast<float>(
                 *wrist_pitch_dial_value -
-                elevate_config_.button_config.analog_input_midpoint) /
-            (0.5f * (elevate_config_.button_config.wrist_dial_max -
-                     elevate_config_.button_config.wrist_dial_min));
+                elevate_config_.button_config.pitch_dial.center) /
+            (0.5f * (elevate_config_.button_config.pitch_dial.max -
+                     elevate_config_.button_config.pitch_dial.min));
         if (std::abs(normalized_dial) < kWristPitchDeadband) {
           normalized_dial = 0.0f;
         }
@@ -1303,18 +1306,19 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
             static_cast<std::uint16_t>(kWristYawIdx + 1), 0x2402, 0x00);
         if (!wrist_roll_dial_value) {
           wrist_roll_dial_value =
-              elevate_config_.button_config.analog_input_midpoint;
+              elevate_config_.button_config.roll_dial.center;
         }
 
         *wrist_roll_dial_value = std::clamp(
-            *wrist_roll_dial_value, elevate_config_.button_config.wrist_dial_min,
-            elevate_config_.button_config.wrist_dial_max);
+            *wrist_roll_dial_value,
+            elevate_config_.button_config.roll_dial.min,
+            elevate_config_.button_config.roll_dial.max);
         float normalized_dial =
             -static_cast<float>(
                 *wrist_roll_dial_value -
-                elevate_config_.button_config.analog_input_midpoint) /
-            (0.5f * (elevate_config_.button_config.wrist_dial_max -
-                     elevate_config_.button_config.wrist_dial_min));
+                elevate_config_.button_config.roll_dial.center) /
+            (0.5f * (elevate_config_.button_config.roll_dial.max -
+                     elevate_config_.button_config.roll_dial.min));
         if (std::abs(normalized_dial) < kWristRollDeadband) {
           normalized_dial = 0.0f;
         }

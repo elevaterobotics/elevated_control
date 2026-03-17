@@ -1,4 +1,4 @@
-name: CMake build
+name: Build and test
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  build:
+  build_and_test:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -28,3 +28,6 @@ jobs:
 
       - name: Build
         run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
