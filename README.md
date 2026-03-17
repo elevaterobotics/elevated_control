@@ -61,6 +61,7 @@ target_link_libraries(my_app PRIVATE elevated_control)
 
 See [`examples/basic_usage.cpp`](examples/basic_usage.cpp) for a minimal
 program that initializes the arm, reads joint positions, then stops.
+It uses the config files in the same directory.
 
 EtherCAT requires root privileges for raw socket access:
 
