@@ -1,0 +1,711 @@
+#include <gtest/gtest.h>
+#include <cmath>
+#include <cstring>
+#include <limits>
+
+#include "elevated_control/joint_limits.hpp"
+
+using namespace elevated_control;
+
+namespace {
+inline constexpr float EPS = 1e-4f;
+}
+
+class JointLimitTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    joint_idx_ = 0;
+    control_level_ = ControlLevel::kVelocity;
+    has_position_limits_.resize(1, true);
+    min_position_limits_.resize(1, -1.0f);
+    max_position_limits_.resize(1, 1.0f);
+    current_position_ = 0.0f;
+    requested_command_ = 0.0f;
+
+    std::memset(&in_somanet_, 0, sizeof(in_somanet_));
+    std::memset(&out_somanet_, 0, sizeof(out_somanet_));
+  }
+
+  size_t joint_idx_;
+  ControlLevel control_level_;
+  std::vector<bool> has_position_limits_;
+  std::vector<float> min_position_limits_;
+  std::vector<float> max_position_limits_;
+  float current_position_;
+  float requested_command_;
+  InSomanet50t in_somanet_;
+  OutSomanet50t out_somanet_;
+  float mechanical_reduction_ = 1.0f;
+  uint32_t encoder_resolution_ = 10000;
+};
+
+// In elevated_control, HAND_GUIDED is handled like torque mode (not nullopt)
+TEST_F(JointLimitTest, HandGuidedControlModeReturnsValidResult) {
+  control_level_ = ControlLevel::kHandGuided;
+  current_position_ = 0.0f;
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  EXPECT_TRUE(result.has_value());
+}
+
+TEST_F(JointLimitTest, NoPositionLimitsReturnsOriginalCommand) {
+  has_position_limits_[joint_idx_] = false;
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FALSE(result->first);
+  EXPECT_FLOAT_EQ(result->second, requested_command_);
+}
+
+TEST_F(JointLimitTest, InfinitePositionLimitsReturnsOriginalCommand) {
+  min_position_limits_[joint_idx_] = -std::numeric_limits<float>::infinity();
+  max_position_limits_[joint_idx_] = std::numeric_limits<float>::infinity();
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FALSE(result->first);
+  EXPECT_FLOAT_EQ(result->second, requested_command_);
+}
+
+TEST_F(JointLimitTest, NaNPositionLimitsReturnsOriginalCommand) {
+  min_position_limits_[joint_idx_] =
+      std::numeric_limits<float>::quiet_NaN();
+  max_position_limits_[joint_idx_] =
+      std::numeric_limits<float>::quiet_NaN();
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FALSE(result->first);
+  EXPECT_FLOAT_EQ(result->second, requested_command_);
+}
+
+TEST_F(JointLimitTest, PositionInMiddleReturnsOriginalCommand) {
+  current_position_ = 0.0f;
+  requested_command_ = 0.3f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FALSE(result->first);
+  EXPECT_FLOAT_EQ(result->second, requested_command_);
+}
+
+TEST_F(JointLimitTest, NearMinLimitPositiveVelocityReturnsOriginalCommand) {
+  current_position_ =
+      min_position_limits_[joint_idx_] + kPositionLimitBuffer + 0.01f;
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second, requested_command_);
+}
+
+TEST_F(JointLimitTest, NearMinLimitNegativeVelocityClampedToZero) {
+  current_position_ =
+      min_position_limits_[joint_idx_] + kPositionLimitBuffer - 0.01f;
+  requested_command_ = -0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second, 0.0f);
+}
+
+TEST_F(JointLimitTest, AtMinLimitBufferNegativeVelocityClampedToZero) {
+  current_position_ =
+      min_position_limits_[joint_idx_] + kPositionLimitBuffer - 0.001f;
+  requested_command_ = -0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second, 0.0f);
+}
+
+TEST_F(JointLimitTest, NearMaxLimitNegativeVelocityReturnsOriginalCommand) {
+  current_position_ =
+      max_position_limits_[joint_idx_] - kPositionLimitBuffer - 0.01f;
+  requested_command_ = -0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second, requested_command_);
+}
+
+TEST_F(JointLimitTest, NearMaxLimitPositiveVelocityClampedToZero) {
+  current_position_ =
+      max_position_limits_[joint_idx_] - kPositionLimitBuffer + 0.01f;
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second, 0.0f);
+}
+
+TEST_F(JointLimitTest, AtMaxLimitBufferPositiveVelocityClampedToZero) {
+  current_position_ =
+      max_position_limits_[joint_idx_] - kPositionLimitBuffer + 0.1f;
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second, 0.0f);
+}
+
+TEST_F(JointLimitTest, ZeroVelocityCommandAlwaysUnchanged) {
+  requested_command_ = 0.0f;
+
+  current_position_ =
+      min_position_limits_[joint_idx_] + kPositionLimitBuffer - 0.01f;
+  auto result_min =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  current_position_ =
+      max_position_limits_[joint_idx_] - kPositionLimitBuffer + 0.01f;
+  auto result_max =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result_min.has_value());
+  ASSERT_TRUE(result_max.has_value());
+  EXPECT_FLOAT_EQ(result_min->second, 0.0f);
+  EXPECT_FLOAT_EQ(result_max->second, 0.0f);
+}
+
+TEST_F(JointLimitTest, PositionAtMinimumLimit) {
+  current_position_ = min_position_limits_[joint_idx_];
+  requested_command_ = -0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second, 0.0f);
+}
+
+TEST_F(JointLimitTest, PositionAtMaximumLimit) {
+  current_position_ = max_position_limits_[joint_idx_];
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second, 0.0f);
+}
+
+// -- Position control mode tests --
+
+TEST_F(JointLimitTest, PositionControlModeMiddleRangeReturnsOriginalCommand) {
+  control_level_ = ControlLevel::kPosition;
+  current_position_ = 0.0f;
+  requested_command_ = 0.3f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second, requested_command_);
+}
+
+TEST_F(JointLimitTest, PositionControlModeNearMinLimitClampedToBuffer) {
+  control_level_ = ControlLevel::kPosition;
+  current_position_ =
+      min_position_limits_[joint_idx_] + kPositionLimitBuffer - 0.01f;
+  requested_command_ = -0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second,
+                   min_position_limits_[joint_idx_] + kPositionLimitBuffer);
+}
+
+TEST_F(JointLimitTest, PositionControlModeAtMinLimitBufferClampedToBuffer) {
+  control_level_ = ControlLevel::kPosition;
+  current_position_ =
+      min_position_limits_[joint_idx_] + kPositionLimitBuffer - 0.001f;
+  requested_command_ = -0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second,
+                   min_position_limits_[joint_idx_] + kPositionLimitBuffer);
+}
+
+TEST_F(JointLimitTest,
+       PositionControlModeOutsideMinLimitBufferReturnsOriginalCommand) {
+  control_level_ = ControlLevel::kPosition;
+  current_position_ =
+      min_position_limits_[joint_idx_] + kPositionLimitBuffer + 0.01f;
+  requested_command_ = -0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second, requested_command_);
+}
+
+TEST_F(JointLimitTest, PositionControlModeNearMaxLimitClampedToBuffer) {
+  control_level_ = ControlLevel::kPosition;
+  current_position_ =
+      max_position_limits_[joint_idx_] - kPositionLimitBuffer + 0.01f;
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second,
+                   max_position_limits_[joint_idx_] - kPositionLimitBuffer);
+}
+
+TEST_F(JointLimitTest, PositionControlModeAtMaxLimitBufferClampedToBuffer) {
+  control_level_ = ControlLevel::kPosition;
+  current_position_ =
+      max_position_limits_[joint_idx_] - kPositionLimitBuffer + 0.001f;
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second,
+                   max_position_limits_[joint_idx_] - kPositionLimitBuffer);
+}
+
+TEST_F(JointLimitTest,
+       PositionControlModeOutsideMaxLimitBufferReturnsOriginalCommand) {
+  control_level_ = ControlLevel::kPosition;
+  current_position_ =
+      max_position_limits_[joint_idx_] - kPositionLimitBuffer - 0.01f;
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second, requested_command_);
+}
+
+TEST_F(JointLimitTest, PositionControlModeAtMinimumLimit) {
+  control_level_ = ControlLevel::kPosition;
+  current_position_ = min_position_limits_[joint_idx_];
+  requested_command_ = -0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second,
+                   min_position_limits_[joint_idx_] + kPositionLimitBuffer);
+}
+
+TEST_F(JointLimitTest, PositionControlModeAtMaximumLimit) {
+  control_level_ = ControlLevel::kPosition;
+  current_position_ = max_position_limits_[joint_idx_];
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second,
+                   max_position_limits_[joint_idx_] - kPositionLimitBuffer);
+}
+
+TEST_F(JointLimitTest, PositionControlModeSafeCommandUnchanged) {
+  control_level_ = ControlLevel::kPosition;
+  current_position_ = 0.0f;
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second, requested_command_);
+}
+
+TEST_F(JointLimitTest, PositionControlModeCommandAtBufferBoundaryUnchanged) {
+  control_level_ = ControlLevel::kPosition;
+  current_position_ = 0.0f;
+  requested_command_ =
+      max_position_limits_[joint_idx_] - kPositionLimitBuffer;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second, requested_command_);
+}
+
+// -- Torque control mode tests --
+
+TEST_F(JointLimitTest, TorqueControlModeNoPositionLimitsReturnsOriginalCommand) {
+  control_level_ = ControlLevel::kTorque;
+  has_position_limits_[joint_idx_] = false;
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second, requested_command_);
+}
+
+TEST_F(JointLimitTest,
+       TorqueControlModeInfinitePositionLimitsReturnsOriginalCommand) {
+  control_level_ = ControlLevel::kTorque;
+  min_position_limits_[joint_idx_] = -std::numeric_limits<float>::infinity();
+  max_position_limits_[joint_idx_] = std::numeric_limits<float>::infinity();
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second, requested_command_);
+}
+
+TEST_F(JointLimitTest,
+       TorqueControlModePositionInMiddleReturnsOriginalCommand) {
+  control_level_ = ControlLevel::kTorque;
+  current_position_ = 0.0f;
+  requested_command_ = 0.3f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second, requested_command_);
+}
+
+TEST_F(JointLimitTest,
+       TorqueControlModeBelowMinLimitBufferAddsMaxBrakeTorque) {
+  control_level_ = ControlLevel::kTorque;
+  current_position_ =
+      min_position_limits_[joint_idx_] + kPositionLimitBuffer - 0.01f;
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second,
+                   requested_command_ + kMaxJointLimitBrakeTorque[joint_idx_]);
+}
+
+TEST_F(JointLimitTest,
+       TorqueControlModeAboveMaxLimitBufferSubtractsMaxBrakeTorque) {
+  control_level_ = ControlLevel::kTorque;
+  current_position_ =
+      max_position_limits_[joint_idx_] - kPositionLimitBuffer + 0.01f;
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second,
+                   requested_command_ - kMaxJointLimitBrakeTorque[joint_idx_]);
+}
+
+TEST_F(JointLimitTest, TorqueControlModeAtMinLimitBufferAddsMaxBrakeTorque) {
+  control_level_ = ControlLevel::kTorque;
+  current_position_ =
+      min_position_limits_[joint_idx_] + kPositionLimitBuffer;
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second,
+                   requested_command_ + kMaxJointLimitBrakeTorque[joint_idx_]);
+}
+
+TEST_F(JointLimitTest,
+       TorqueControlModeAtMaxLimitBufferSubtractsMaxBrakeTorque) {
+  control_level_ = ControlLevel::kTorque;
+  current_position_ =
+      max_position_limits_[joint_idx_] - kPositionLimitBuffer;
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FLOAT_EQ(result->second,
+                   requested_command_ - kMaxJointLimitBrakeTorque[joint_idx_]);
+}
+
+TEST_F(JointLimitTest,
+       TorqueControlModeNearUpperLimitAppliesProportionalBrake) {
+  control_level_ = ControlLevel::kTorque;
+  current_position_ =
+      max_position_limits_[joint_idx_] - kPositionLimitBuffer - 0.05f;
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+
+  float expected_brake_torque =
+      (kJointLimitTorqueBrakeDistance - 0.05f) /
+      kJointLimitTorqueBrakeDistance * kMaxJointLimitBrakeTorque[joint_idx_];
+  EXPECT_NEAR(result->second, requested_command_ - expected_brake_torque, EPS);
+}
+
+TEST_F(JointLimitTest,
+       TorqueControlModeNearLowerLimitAppliesProportionalBrake) {
+  control_level_ = ControlLevel::kTorque;
+  current_position_ =
+      min_position_limits_[joint_idx_] + kPositionLimitBuffer + 0.05f;
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+
+  float expected_brake_torque =
+      (kJointLimitTorqueBrakeDistance - 0.05f) /
+      kJointLimitTorqueBrakeDistance * kMaxJointLimitBrakeTorque[joint_idx_];
+  EXPECT_NEAR(result->second, requested_command_ + expected_brake_torque, EPS);
+}
+
+TEST_F(JointLimitTest, TorqueControlModeAtBrakeDistanceNoBrakeApplied) {
+  control_level_ = ControlLevel::kTorque;
+  current_position_ = max_position_limits_[joint_idx_] -
+                       kPositionLimitBuffer - kJointLimitTorqueBrakeDistance;
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_NEAR(result->second, requested_command_, EPS);
+}
+
+TEST_F(JointLimitTest, TorqueControlModeBeyondBrakeDistanceNoBrakeApplied) {
+  control_level_ = ControlLevel::kTorque;
+  current_position_ = max_position_limits_[joint_idx_] -
+                       kPositionLimitBuffer - kJointLimitTorqueBrakeDistance -
+                       0.01f;
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_NEAR(result->second, requested_command_, EPS);
+}
+
+TEST_F(JointLimitTest, TorqueControlModeZeroCommandModifiedByBrakeTorque) {
+  control_level_ = ControlLevel::kTorque;
+  requested_command_ = 0.0f;
+
+  current_position_ =
+      min_position_limits_[joint_idx_] + kPositionLimitBuffer - 0.01f;
+  auto result_min =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  current_position_ =
+      max_position_limits_[joint_idx_] - kPositionLimitBuffer + 0.01f;
+  auto result_max =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result_min.has_value());
+  ASSERT_TRUE(result_max.has_value());
+  EXPECT_NEAR(result_min->second, kMaxJointLimitBrakeTorque[joint_idx_], EPS);
+  EXPECT_NEAR(result_max->second, -kMaxJointLimitBrakeTorque[joint_idx_], EPS);
+}
+
+TEST_F(JointLimitTest, TorqueControlModeAtMinimumLimit) {
+  control_level_ = ControlLevel::kTorque;
+  current_position_ = min_position_limits_[joint_idx_];
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_NEAR(result->second,
+              requested_command_ + kMaxJointLimitBrakeTorque[joint_idx_], EPS);
+}
+
+TEST_F(JointLimitTest, TorqueControlModeAtMaximumLimit) {
+  control_level_ = ControlLevel::kTorque;
+  current_position_ = max_position_limits_[joint_idx_];
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_NEAR(result->second,
+              requested_command_ - kMaxJointLimitBrakeTorque[joint_idx_], EPS);
+}
+
+TEST_F(JointLimitTest, TorqueControlModeVerySmallDistanceMaxBrakeTorque) {
+  control_level_ = ControlLevel::kTorque;
+  current_position_ =
+      max_position_limits_[joint_idx_] - kPositionLimitBuffer - 0.001f;
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+
+  float expected_brake_torque =
+      (kJointLimitTorqueBrakeDistance - 0.001f) /
+      kJointLimitTorqueBrakeDistance * kMaxJointLimitBrakeTorque[joint_idx_];
+  EXPECT_NEAR(result->second, requested_command_ - expected_brake_torque, EPS);
+}
+
+// -- SetVelocityWithLimits tests --
+
+TEST_F(JointLimitTest, SetVelocityWithLimits_NormalOperation) {
+  in_somanet_.PositionValue = 0;
+  requested_command_ = 1000.0f;
+
+  SetVelocityWithLimits(joint_idx_, &in_somanet_, has_position_limits_,
+                        min_position_limits_, max_position_limits_,
+                        mechanical_reduction_, encoder_resolution_,
+                        requested_command_, &out_somanet_);
+
+  EXPECT_EQ(out_somanet_.TargetVelocity, 1000);
+  EXPECT_EQ(out_somanet_.OpMode, kCyclicVelocityMode);
+  EXPECT_EQ(out_somanet_.VelocityOffset, 0);
+}
+
+TEST_F(JointLimitTest, SetVelocityWithLimits_Clamping) {
+  float desired_pos = -0.96f;
+  int32_t ticks = static_cast<int32_t>(
+      desired_pos * mechanical_reduction_ * encoder_resolution_ /
+      (2.0f * static_cast<float>(M_PI)));
+
+  in_somanet_.PositionValue = ticks;
+  requested_command_ = -0.5f;
+
+  SetVelocityWithLimits(joint_idx_, &in_somanet_, has_position_limits_,
+                        min_position_limits_, max_position_limits_,
+                        mechanical_reduction_, encoder_resolution_,
+                        requested_command_, &out_somanet_);
+
+  EXPECT_FLOAT_EQ(out_somanet_.TargetVelocity, 0.0f);
+  EXPECT_EQ(out_somanet_.OpMode, kCyclicVelocityMode);
+  EXPECT_EQ(out_somanet_.VelocityOffset, 0);
+}
