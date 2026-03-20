@@ -293,6 +293,7 @@ std::expected<void, Error> ArmInterface::StartControlLoop(
   }
 
   control_loop_running_ = true;
+  pdo_exchange_count_.store(0);
 
   // Start the EtherCAT control loop
   control_thread_ = std::jthread([this](std::stop_token st) {
@@ -1042,12 +1043,19 @@ void ArmInterface::ControlLoop(std::stop_token stop_token) {
     const bool estop = EStopEngaged();
     if (estop) {
       require_new_command_mode_ = true;
+      // Match SynapticonSystemInterface::SomanetCyclicLoop: count exchanges when
+      // e-stop path still has valid PDO (EStopEngaged already ran send/receive).
+      if (wkc_.load() >= expected_wkc_.load() &&
+          pdo_exchange_count_.load() < kMinPdoExchanges) {
+        pdo_exchange_count_.fetch_add(1);
+      }
+    } else if (pdo_exchange_count_.load() < kMinPdoExchanges) {
+      pdo_exchange_count_.fetch_add(1);
     }
 
-    // Always update state readout after the PDO exchange so that
-    // GetPositions() etc. return live sensor data regardless of e-stop
-    // or command-mode state.
-    {
+    // After enough PDO exchanges, update state readout so GetPositions() etc.
+    // return settled data (see synapticon read() MIN_PDO_EXCHANGES gate).
+    if (pdo_exchange_count_.load() >= kMinPdoExchanges) {
       std::lock_guard<std::mutex> lock(hw_state_mtx_);
       for (std::size_t joint_idx = 0; joint_idx < kNumJoints; ++joint_idx) {
         state_velocities_[joint_idx] = InputTicksVelocityToOutputShaftRadPerS(

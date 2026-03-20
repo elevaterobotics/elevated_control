@@ -43,6 +43,8 @@ int main() {
     return 1;
   }
 
+  std::this_thread::sleep_for(std::chrono::seconds(10));
+
   // Read joint positions
   auto pos = arm.GetPositions();
   if (pos) {
