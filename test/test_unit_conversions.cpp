@@ -174,3 +174,117 @@ TEST_F(UnitConversionTest, RoundTripWithoutWrapping) {
 
   EXPECT_NEAR(round_tripped_ticks, original_ticks, 1);
 }
+
+// --- VelocityValueToOutputShaftRadPerS tests ---
+
+TEST_F(UnitConversionTest, VelocityValueToRadPerS_ZeroMilliRpm) {
+  const int32_t si_velocity_unit = static_cast<int32_t>(0xFDB44700u);
+  const float result = elevated_control::VelocityValueToOutputShaftRadPerS(
+      0, si_velocity_unit, 170.0f, 2560);
+  EXPECT_NEAR(result, 0.0f, 1e-5f);
+}
+
+TEST_F(UnitConversionTest, VelocityValueToRadPerS_PositiveMilliRpm) {
+  const int32_t si_velocity_unit = static_cast<int32_t>(0xFDB44700u);
+  const float result = elevated_control::VelocityValueToOutputShaftRadPerS(
+      60000, si_velocity_unit, 170.0f, 2560);
+  EXPECT_NEAR(result, 2.0f * static_cast<float>(M_PI), 1e-4f);
+}
+
+TEST_F(UnitConversionTest, VelocityValueToRadPerS_NegativeMilliRpm) {
+  const int32_t si_velocity_unit = static_cast<int32_t>(0xFDB44700u);
+  const float result = elevated_control::VelocityValueToOutputShaftRadPerS(
+      -60000, si_velocity_unit, 170.0f, 2560);
+  EXPECT_NEAR(result, -2.0f * static_cast<float>(M_PI), 1e-4f);
+}
+
+TEST_F(UnitConversionTest, VelocityValueToRadPerS_ArbitraryMilliRpm) {
+  const int32_t si_velocity_unit = static_cast<int32_t>(0xFDB44700u);
+  const float expected =
+      1000.0f * 2.0f * static_cast<float>(M_PI) / (60.0f * 1000.0f);
+  const float result = elevated_control::VelocityValueToOutputShaftRadPerS(
+      1000, si_velocity_unit, 170.0f, 2560);
+  EXPECT_NEAR(result, expected, 1e-5f);
+}
+
+TEST_F(UnitConversionTest, VelocityValueToRadPerS_FallbackToTicks) {
+  const float mechanical_reduction = 170.0f;
+  const uint32_t encoder_resolution = 2560;
+  const int32_t velocity_value = 5000;
+  const int32_t si_velocity_unit = 0;
+
+  const float result = elevated_control::VelocityValueToOutputShaftRadPerS(
+      velocity_value, si_velocity_unit, mechanical_reduction,
+      encoder_resolution);
+  const float expected =
+      elevated_control::InputTicksVelocityToOutputShaftRadPerS(
+          velocity_value, mechanical_reduction, encoder_resolution);
+
+  EXPECT_NEAR(result, expected, 1e-4f);
+}
+
+// --- OutputShaftRadPerSToVelocityValue tests ---
+
+TEST_F(UnitConversionTest, RadPerSToVelocityValue_ZeroMilliRpm) {
+  const int32_t si_velocity_unit = static_cast<int32_t>(0xFDB44700u);
+  const int32_t result =
+      elevated_control::OutputShaftRadPerSToVelocityValue(0.0f, si_velocity_unit,
+                                                          170.0f, 2560);
+  EXPECT_EQ(result, 0);
+}
+
+TEST_F(UnitConversionTest, RadPerSToVelocityValue_PositiveMilliRpm) {
+  const int32_t si_velocity_unit = static_cast<int32_t>(0xFDB44700u);
+  const int32_t result = elevated_control::OutputShaftRadPerSToVelocityValue(
+      2.0f * static_cast<float>(M_PI), si_velocity_unit, 170.0f, 2560);
+  EXPECT_NEAR(result, 60000, 1);
+}
+
+TEST_F(UnitConversionTest, RadPerSToVelocityValue_NegativeMilliRpm) {
+  const int32_t si_velocity_unit = static_cast<int32_t>(0xFDB44700u);
+  const int32_t result = elevated_control::OutputShaftRadPerSToVelocityValue(
+      -2.0f * static_cast<float>(M_PI), si_velocity_unit, 170.0f, 2560);
+  EXPECT_NEAR(result, -60000, 1);
+}
+
+TEST_F(UnitConversionTest, RadPerSToVelocityValue_ArbitraryMilliRpm) {
+  const int32_t si_velocity_unit = static_cast<int32_t>(0xFDB44700u);
+  const int32_t expected = static_cast<int32_t>(
+      1.0f * 60.0f * 1000.0f / (2.0f * static_cast<float>(M_PI)));
+  const int32_t result = elevated_control::OutputShaftRadPerSToVelocityValue(
+      1.0f, si_velocity_unit, 170.0f, 2560);
+  EXPECT_NEAR(result, expected, 1);
+}
+
+TEST_F(UnitConversionTest, RadPerSToVelocityValue_FallbackToTicks) {
+  const float mechanical_reduction = 170.0f;
+  const uint32_t encoder_resolution = 2560;
+  const float rad_per_s = 1.5f;
+  const int32_t si_velocity_unit = 0;
+
+  const int32_t result = elevated_control::OutputShaftRadPerSToVelocityValue(
+      rad_per_s, si_velocity_unit, mechanical_reduction, encoder_resolution);
+  const int32_t expected =
+      elevated_control::OutputShaftRadPerSToInputTicksPerS(
+          rad_per_s, mechanical_reduction, encoder_resolution);
+
+  EXPECT_EQ(result, expected);
+}
+
+TEST_F(UnitConversionTest, VelocityMilliRpmRoundTrip) {
+  const int32_t si_velocity_unit = static_cast<int32_t>(0xFDB44700u);
+  const float mechanical_reduction = 170.0f;
+  const uint32_t encoder_resolution = 2560;
+  const float original_rad_per_s = 1.23f;
+
+  const int32_t velocity_value =
+      elevated_control::OutputShaftRadPerSToVelocityValue(
+          original_rad_per_s, si_velocity_unit, mechanical_reduction,
+          encoder_resolution);
+  const float round_tripped =
+      elevated_control::VelocityValueToOutputShaftRadPerS(
+          velocity_value, si_velocity_unit, mechanical_reduction,
+          encoder_resolution);
+
+  EXPECT_NEAR(round_tripped, original_rad_per_s, 2e-4f);
+}

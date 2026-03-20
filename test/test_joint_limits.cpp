@@ -4,6 +4,7 @@
 #include <limits>
 
 #include "elevated_control/joint_limits.hpp"
+#include "elevated_control/unit_conversions.hpp"
 
 using namespace elevated_control;
 
@@ -679,14 +680,18 @@ TEST_F(JointLimitTest, TorqueControlModeVerySmallDistanceMaxBrakeTorque) {
 
 TEST_F(JointLimitTest, SetVelocityWithLimits_NormalOperation) {
   in_somanet_.PositionValue = 0;
-  requested_command_ = 1000.0f;
+  requested_command_ = 1.0f;  // rad/s at output shaft
+  const int32_t si_velocity_unit = 0;
+  const int32_t expected = OutputShaftRadPerSToVelocityValue(
+      requested_command_, si_velocity_unit, mechanical_reduction_,
+      encoder_resolution_);
 
   SetVelocityWithLimits(joint_idx_, &in_somanet_, has_position_limits_,
                         min_position_limits_, max_position_limits_,
                         mechanical_reduction_, encoder_resolution_,
-                        requested_command_, &out_somanet_);
+                        requested_command_, si_velocity_unit, &out_somanet_);
 
-  EXPECT_EQ(out_somanet_.TargetVelocity, 1000);
+  EXPECT_EQ(out_somanet_.TargetVelocity, expected);
   EXPECT_EQ(out_somanet_.OpMode, kCyclicVelocityMode);
   EXPECT_EQ(out_somanet_.VelocityOffset, 0);
 }
@@ -700,12 +705,55 @@ TEST_F(JointLimitTest, SetVelocityWithLimits_Clamping) {
   in_somanet_.PositionValue = ticks;
   requested_command_ = -0.5f;
 
+  const int32_t si_velocity_unit = 0;
   SetVelocityWithLimits(joint_idx_, &in_somanet_, has_position_limits_,
                         min_position_limits_, max_position_limits_,
                         mechanical_reduction_, encoder_resolution_,
-                        requested_command_, &out_somanet_);
+                        requested_command_, si_velocity_unit, &out_somanet_);
 
   EXPECT_FLOAT_EQ(out_somanet_.TargetVelocity, 0.0f);
+  EXPECT_EQ(out_somanet_.OpMode, kCyclicVelocityMode);
+  EXPECT_EQ(out_somanet_.VelocityOffset, 0);
+}
+
+// SetVelocityWithLimits: Normal operation with milli-RPM si_velocity_unit
+TEST_F(JointLimitTest, SetVelocityWithLimits_NormalOperation_MilliRpmUnit) {
+  const int32_t si_velocity_unit =
+      static_cast<int32_t>(0xFDB44700u);
+  in_somanet_.PositionValue = 0;
+  requested_command_ = 1.0f;
+
+  SetVelocityWithLimits(joint_idx_, &in_somanet_, has_position_limits_,
+                        min_position_limits_, max_position_limits_,
+                        mechanical_reduction_, encoder_resolution_,
+                        requested_command_, si_velocity_unit, &out_somanet_);
+
+  int32_t expected = OutputShaftRadPerSToVelocityValue(
+      1.0f, si_velocity_unit, mechanical_reduction_, encoder_resolution_);
+  EXPECT_NEAR(out_somanet_.TargetVelocity, expected, 1);
+  EXPECT_EQ(out_somanet_.OpMode, kCyclicVelocityMode);
+  EXPECT_EQ(out_somanet_.VelocityOffset, 0);
+}
+
+// SetVelocityWithLimits: Clamping with milli-RPM si_velocity_unit
+TEST_F(JointLimitTest, SetVelocityWithLimits_Clamping_MilliRpmUnit) {
+  const int32_t si_velocity_unit =
+      static_cast<int32_t>(0xFDB44700u);
+
+  float desired_pos = -0.96f;
+  int32_t ticks = static_cast<int32_t>(
+      desired_pos * mechanical_reduction_ * encoder_resolution_ /
+      (2.0f * static_cast<float>(M_PI)));
+
+  in_somanet_.PositionValue = ticks;
+  requested_command_ = -0.5f;
+
+  SetVelocityWithLimits(joint_idx_, &in_somanet_, has_position_limits_,
+                        min_position_limits_, max_position_limits_,
+                        mechanical_reduction_, encoder_resolution_,
+                        requested_command_, si_velocity_unit, &out_somanet_);
+
+  EXPECT_EQ(out_somanet_.TargetVelocity, 0);
   EXPECT_EQ(out_somanet_.OpMode, kCyclicVelocityMode);
   EXPECT_EQ(out_somanet_.VelocityOffset, 0);
 }
