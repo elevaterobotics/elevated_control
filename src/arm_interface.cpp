@@ -91,10 +91,10 @@ std::expected<void, Error> ArmInterface::Initialize() {
 
   // Initialize command buffers
   control_level_.resize(kNumJoints, ControlLevel::kUndefined);
-  state_positions_.resize(kNumJoints, 0.0f);
-  state_velocities_.resize(kNumJoints, 0.0f);
-  state_torques_.resize(kNumJoints, 0.0f);
-  state_accelerations_.resize(kNumJoints, 0.0f);
+  state_positions_.resize(kNumJoints, std::numeric_limits<float>::quiet_NaN());
+  state_velocities_.resize(kNumJoints, std::numeric_limits<float>::quiet_NaN());
+  state_torques_.resize(kNumJoints, std::numeric_limits<float>::quiet_NaN());
+  state_accelerations_.resize(kNumJoints, std::numeric_limits<float>::quiet_NaN());
 
   mechanical_reductions_.resize(kNumJoints);
   encoder_resolutions_.resize(kNumJoints);
