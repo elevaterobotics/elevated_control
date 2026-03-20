@@ -1,0 +1,37 @@
+add_executable(basic_usage basic_usage.cpp)
+target_link_libraries(basic_usage PRIVATE elevated_control)
+target_include_directories(basic_usage PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR})
+
+add_executable(velocity_commands velocity_commands.cpp)
+target_link_libraries(velocity_commands PRIVATE elevated_control)
+target_include_directories(velocity_commands PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR})
+
+set(EXAMPLE_CONFIG_YAMLS
+  ${CMAKE_CURRENT_SOURCE_DIR}/joint_limits.yaml
+  ${CMAKE_CURRENT_SOURCE_DIR}/elevate_config.yaml
+)
+foreach(exe basic_usage velocity_commands)
+  foreach(yaml ${EXAMPLE_CONFIG_YAMLS})
+    add_custom_command(
+      TARGET ${exe} POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${yaml}
+        $<TARGET_FILE_DIR:${exe}>
+      VERBATIM
+    )
+  endforeach()
+endforeach()
+
+install(
+	TARGETS basic_usage velocity_commands
+	RUNTIME DESTINATION examples
+)
+
+install(
+	FILES
+		elevate_config.yaml
+		joint_limits.yaml
+	DESTINATION examples
+)
