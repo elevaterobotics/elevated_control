@@ -26,6 +26,7 @@ namespace {
 
 constexpr int kEcTimeoutMon = 500;
 constexpr char kExpectedSlaveName[] = "SOMANET";
+constexpr std::chrono::seconds kProcessDataWarnThrottleInterval{2};
 
 bool InterfaceExists(const char* ifname) {
   int sock = socket(AF_INET, SOCK_DGRAM, 0);
@@ -907,7 +908,17 @@ bool ArmInterface::EStopEngaged() {
   wkc_ = ec_receive_processdata(EC_TIMEOUTRET);
 
   if (wkc_ < expected_wkc_) {
-    spdlog::error("Process data communication failed");
+    if (pdo_exchange_count_.load() < kMinPdoExchanges) {
+      // It's expected to have some pdo exchange failures on startup
+      return true;
+    }
+    static auto last_process_data_warn =
+        std::chrono::steady_clock::time_point{};
+    const auto now = std::chrono::steady_clock::now();
+    if (now - last_process_data_warn >= kProcessDataWarnThrottleInterval) {
+      spdlog::warn("Process data communication failed");
+      last_process_data_warn = now;
+    }
     return true;
   }
 

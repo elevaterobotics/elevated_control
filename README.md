@@ -38,8 +38,8 @@ The build produces:
 
 - `libelevated_soem.a` -- static EtherCAT master library (SOEM/OSAL/OSHW)
 - `libelevated_control.so` -- shared library with the `ArmInterface` class
-- `basic_usage` -- example executable (with YAML copied beside it in the build tree; after install, YAML is under `share/elevated_control/` in the prefix)
-- `velocity_commands` -- streams slow velocity commands for a few seconds after the loop is ready
+- `basic_usage` -- minimal example executable that waits for the control loop to be ready then reads the joint positions
+- `velocity_commands` -- waits for the control loop to be ready then send 5 seconds of slow wrist roll velocity commands
 
 ## Tests
 
@@ -109,6 +109,7 @@ elevated_control/
   CMakeLists.txt
   examples/
     basic_usage.cpp         Minimal usage example (builds as executable)
+    velocity_commands.cpp   Simple velocity control example (builds as executable)
   include/elevated_control/
     arm_interface.hpp       Main class
     types.hpp               JointName, ControlLevel, ErrorCode, Error
