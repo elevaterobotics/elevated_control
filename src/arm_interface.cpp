@@ -364,6 +364,11 @@ std::expected<void, Error> ArmInterface::StartControlLoop(
   return {};
 }
 
+bool ArmInterface::IsControlLoopReady() const noexcept {
+  return control_loop_running_.load() &&
+         pdo_exchange_count_.load() >= kMinPdoExchanges;
+}
+
 std::expected<void, Error> ArmInterface::StopControlLoop() {
   if (!control_loop_running_) {
     return std::unexpected(Error{ErrorCode::kControlLoopNotRunning,

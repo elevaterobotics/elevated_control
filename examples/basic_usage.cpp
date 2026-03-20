@@ -1,7 +1,9 @@
 #include "elevated_control/arm_interface.hpp"
 
+#include <chrono>
 #include <filesystem>
 #include <string>
+#include <thread>
 
 namespace fs = std::filesystem;
 
@@ -43,20 +45,15 @@ int main() {
     return 1;
   }
 
-  std::this_thread::sleep_for(std::chrono::seconds(10));
+  while (!arm.IsControlLoopReady()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
 
   // Read joint positions
   auto pos = arm.GetPositions();
   if (pos) {
     for (float p : *pos) spdlog::info("{:.4f}", p);
   }
-
-  // Send a position command (7 joints, radians)
-  //std::vector<float> target(7, 0.0f);
-  //arm.SetPositionCommand(target);
-
-  // Switch to hand-guided mode
-  //arm.SwitchControlMode(elevated_control::ControlLevel::kHandGuided);
 
   // Stop and apply brakes
   arm.StopControlLoop();
