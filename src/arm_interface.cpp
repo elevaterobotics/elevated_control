@@ -1039,8 +1039,34 @@ void ArmInterface::ControlLoop(std::stop_token stop_token) {
   std::vector<bool> first_iteration(kNumJoints, true);
 
   while (!stop_token.stop_requested() && !dynamic_sim_exited_) {
-    if (EStopEngaged()) {
+    const bool estop = EStopEngaged();
+    if (estop) {
       require_new_command_mode_ = true;
+    }
+
+    // Always update state readout after the PDO exchange so that
+    // GetPositions() etc. return live sensor data regardless of e-stop
+    // or command-mode state.
+    {
+      std::lock_guard<std::mutex> lock(hw_state_mtx_);
+      for (std::size_t joint_idx = 0; joint_idx < kNumJoints; ++joint_idx) {
+        state_velocities_[joint_idx] = InputTicksVelocityToOutputShaftRadPerS(
+            in_somanet_[joint_idx]->VelocityValue,
+            mechanical_reductions_[joint_idx],
+            encoder_resolutions_[joint_idx]);
+        state_positions_[joint_idx] = InputTicksToOutputShaftRad(
+            in_somanet_[joint_idx]->PositionValue,
+            mechanical_reductions_[joint_idx],
+            encoder_resolutions_[joint_idx], joint_idx);
+        state_torques_[joint_idx] =
+            (in_somanet_[joint_idx]->TorqueValue / 1000.0f) *
+            rated_torques_[joint_idx].load() *
+            mechanical_reductions_[joint_idx].load();
+        state_accelerations_[joint_idx] = 0.0f;
+      }
+    }
+
+    if (estop) {
       osal_usleep(kCyclicLoopSleepUs);
       continue;
     }
@@ -1121,23 +1147,8 @@ void ArmInterface::ControlLoop(std::stop_token stop_token) {
         prev_deadman_pressed = false;
       }
 
-      // Update state and run state machine for each joint
+      // Run state machine for each joint
       for (std::size_t joint_idx = 0; joint_idx < kNumJoints; ++joint_idx) {
-        // Update state readout
-        state_velocities_[joint_idx] = InputTicksVelocityToOutputShaftRadPerS(
-            in_somanet_[joint_idx]->VelocityValue,
-            mechanical_reductions_[joint_idx],
-            encoder_resolutions_[joint_idx]);
-        state_positions_[joint_idx] = InputTicksToOutputShaftRad(
-            in_somanet_[joint_idx]->PositionValue,
-            mechanical_reductions_[joint_idx],
-            encoder_resolutions_[joint_idx], joint_idx);
-        state_torques_[joint_idx] =
-            (in_somanet_[joint_idx]->TorqueValue / 1000.0f) *
-            rated_torques_[joint_idx].load() *
-            mechanical_reductions_[joint_idx].load();
-        state_accelerations_[joint_idx] = 0.0f;
-
         if (first_iteration.at(joint_idx)) {
           out_somanet_[joint_idx]->OpMode = kProfileTorqueMode;
           first_iteration.at(joint_idx) = false;
