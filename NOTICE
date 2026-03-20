@@ -1,0 +1,13 @@
+This project distributes and links against the SOEM (Simple Open EtherCAT
+Master) library located in external/SOEM.
+
+The bundled SOEM copy includes its own license notice in external/SOEM/LICENSE,
+which states that SOEM is distributed under the GNU General Public License
+version 2 and includes additional exception language specific to that code.
+
+Accordingly, distributions of this project must preserve the SOEM copyright
+and license notices and make the corresponding source code available as
+required by the GNU General Public License version 2.
+
+A copy of the GNU General Public License version 2 is provided in the LICENSE
+file at the repository root.
