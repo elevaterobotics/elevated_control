@@ -195,6 +195,7 @@ class ArmInterface {
   std::vector<OutSomanet50t*> out_somanet_;
   std::atomic<int> wkc_{0};
   std::atomic<int> expected_wkc_{0};
+  std::atomic<int> pdo_exchange_count_{0};
 
   // Per-joint mechanical params
   std::deque<std::atomic<float>> mechanical_reductions_;

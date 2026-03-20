@@ -55,6 +55,10 @@ inline constexpr float kMinAllowableSpringPosition = 18000.f;
 // Cyclic loop sleep (microseconds)
 inline constexpr unsigned int kCyclicLoopSleepUs = 5000;
 
+// Minimum successful PDO exchanges before joint state readout is trusted (matches
+// synapticon_ros2_control::SynapticonSystemInterface::read). At ~5 ms/cycle, 200 ≈ 1 s.
+inline constexpr int kMinPdoExchanges = 200;
+
 // Deadband for wrist pitch dial
 inline constexpr float kWristPitchDeadband = 0.2f;
 inline constexpr float kWristRollDeadband = 0.1f;

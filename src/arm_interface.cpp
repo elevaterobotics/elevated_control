@@ -91,10 +91,10 @@ std::expected<void, Error> ArmInterface::Initialize() {
 
   // Initialize command buffers
   control_level_.resize(kNumJoints, ControlLevel::kUndefined);
-  state_positions_.resize(kNumJoints, 0.0f);
-  state_velocities_.resize(kNumJoints, 0.0f);
-  state_torques_.resize(kNumJoints, 0.0f);
-  state_accelerations_.resize(kNumJoints, 0.0f);
+  state_positions_.resize(kNumJoints, std::numeric_limits<float>::quiet_NaN());
+  state_velocities_.resize(kNumJoints, std::numeric_limits<float>::quiet_NaN());
+  state_torques_.resize(kNumJoints, std::numeric_limits<float>::quiet_NaN());
+  state_accelerations_.resize(kNumJoints, std::numeric_limits<float>::quiet_NaN());
 
   mechanical_reductions_.resize(kNumJoints);
   encoder_resolutions_.resize(kNumJoints);
@@ -293,6 +293,7 @@ std::expected<void, Error> ArmInterface::StartControlLoop(
   }
 
   control_loop_running_ = true;
+  pdo_exchange_count_.store(0);
 
   // Start the EtherCAT control loop
   control_thread_ = std::jthread([this](std::stop_token st) {
@@ -1039,8 +1040,41 @@ void ArmInterface::ControlLoop(std::stop_token stop_token) {
   std::vector<bool> first_iteration(kNumJoints, true);
 
   while (!stop_token.stop_requested() && !dynamic_sim_exited_) {
-    if (EStopEngaged()) {
+    const bool estop = EStopEngaged();
+    if (estop) {
       require_new_command_mode_ = true;
+      // Match SynapticonSystemInterface::SomanetCyclicLoop: count exchanges when
+      // e-stop path still has valid PDO (EStopEngaged already ran send/receive).
+      if (wkc_.load() >= expected_wkc_.load() &&
+          pdo_exchange_count_.load() < kMinPdoExchanges) {
+        pdo_exchange_count_.fetch_add(1);
+      }
+    } else if (pdo_exchange_count_.load() < kMinPdoExchanges) {
+      pdo_exchange_count_.fetch_add(1);
+    }
+
+    // After enough PDO exchanges, update state readout so GetPositions() etc.
+    // return settled data (see synapticon read() MIN_PDO_EXCHANGES gate).
+    if (pdo_exchange_count_.load() >= kMinPdoExchanges) {
+      std::lock_guard<std::mutex> lock(hw_state_mtx_);
+      for (std::size_t joint_idx = 0; joint_idx < kNumJoints; ++joint_idx) {
+        state_velocities_[joint_idx] = InputTicksVelocityToOutputShaftRadPerS(
+            in_somanet_[joint_idx]->VelocityValue,
+            mechanical_reductions_[joint_idx],
+            encoder_resolutions_[joint_idx]);
+        state_positions_[joint_idx] = InputTicksToOutputShaftRad(
+            in_somanet_[joint_idx]->PositionValue,
+            mechanical_reductions_[joint_idx],
+            encoder_resolutions_[joint_idx], joint_idx);
+        state_torques_[joint_idx] =
+            (in_somanet_[joint_idx]->TorqueValue / 1000.0f) *
+            rated_torques_[joint_idx].load() *
+            mechanical_reductions_[joint_idx].load();
+        state_accelerations_[joint_idx] = 0.0f;
+      }
+    }
+
+    if (estop) {
       osal_usleep(kCyclicLoopSleepUs);
       continue;
     }
@@ -1121,23 +1155,8 @@ void ArmInterface::ControlLoop(std::stop_token stop_token) {
         prev_deadman_pressed = false;
       }
 
-      // Update state and run state machine for each joint
+      // Run state machine for each joint
       for (std::size_t joint_idx = 0; joint_idx < kNumJoints; ++joint_idx) {
-        // Update state readout
-        state_velocities_[joint_idx] = InputTicksVelocityToOutputShaftRadPerS(
-            in_somanet_[joint_idx]->VelocityValue,
-            mechanical_reductions_[joint_idx],
-            encoder_resolutions_[joint_idx]);
-        state_positions_[joint_idx] = InputTicksToOutputShaftRad(
-            in_somanet_[joint_idx]->PositionValue,
-            mechanical_reductions_[joint_idx],
-            encoder_resolutions_[joint_idx], joint_idx);
-        state_torques_[joint_idx] =
-            (in_somanet_[joint_idx]->TorqueValue / 1000.0f) *
-            rated_torques_[joint_idx].load() *
-            mechanical_reductions_[joint_idx].load();
-        state_accelerations_[joint_idx] = 0.0f;
-
         if (first_iteration.at(joint_idx)) {
           out_somanet_[joint_idx]->OpMode = kProfileTorqueMode;
           first_iteration.at(joint_idx) = false;
