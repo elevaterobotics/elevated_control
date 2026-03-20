@@ -59,19 +59,28 @@ target_link_libraries(elevated_control
 # ---------- Examples ----------
 add_executable(basic_usage examples/basic_usage.cpp)
 target_link_libraries(basic_usage PRIVATE elevated_control)
+target_include_directories(basic_usage PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/examples)
+
+add_executable(velocity_commands examples/velocity_commands.cpp)
+target_link_libraries(velocity_commands PRIVATE elevated_control)
+target_include_directories(velocity_commands PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/examples)
 
 set(EXAMPLE_CONFIG_YAMLS
   ${CMAKE_CURRENT_SOURCE_DIR}/examples/joint_limits.yaml
   ${CMAKE_CURRENT_SOURCE_DIR}/examples/elevate_config.yaml
 )
-foreach(yaml ${EXAMPLE_CONFIG_YAMLS})
-  add_custom_command(
-    TARGET basic_usage POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      ${yaml}
-      $<TARGET_FILE_DIR:basic_usage>
-    VERBATIM
-  )
+foreach(exe basic_usage velocity_commands)
+  foreach(yaml ${EXAMPLE_CONFIG_YAMLS})
+    add_custom_command(
+      TARGET ${exe} POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${yaml}
+        $<TARGET_FILE_DIR:${exe}>
+      VERBATIM
+    )
+  endforeach()
 endforeach()
 
 # ---------- Tests ----------
@@ -107,7 +116,7 @@ install(
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
-install(TARGETS basic_usage RUNTIME DESTINATION bin)
+install(TARGETS basic_usage velocity_commands RUNTIME DESTINATION bin)
 install(
   FILES examples/joint_limits.yaml examples/elevate_config.yaml
   DESTINATION share/elevated_control
