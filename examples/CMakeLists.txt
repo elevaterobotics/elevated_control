@@ -1,10 +1,10 @@
 add_executable(basic_usage basic_usage.cpp)
-target_link_libraries(basic_usage PRIVATE elevated_control)
+target_link_libraries(basic_usage PRIVATE ${PROJECT_NAME})
 target_include_directories(basic_usage PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_executable(velocity_commands velocity_commands.cpp)
-target_link_libraries(velocity_commands PRIVATE elevated_control)
+target_link_libraries(velocity_commands PRIVATE ${PROJECT_NAME})
 target_include_directories(velocity_commands PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR})
 

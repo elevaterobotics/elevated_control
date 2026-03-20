@@ -11,6 +11,6 @@ foreach(test_name
   test_stop
 )
   add_executable(${test_name} ${test_name}.cpp)
-  target_link_libraries(${test_name} PRIVATE elevated_control GTest::gtest GTest::gtest_main)
+  target_link_libraries(${test_name} PRIVATE ${PROJECT_NAME} GTest::gtest GTest::gtest_main)
   gtest_discover_tests(${test_name})
 endforeach()

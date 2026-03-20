@@ -37,21 +37,21 @@ target_include_directories(elevated_soem PUBLIC
 find_package(spdlog REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
-add_library(elevated_control SHARED
+add_library(${PROJECT_NAME} SHARED
   src/arm_interface.cpp
   src/joint_admittance.cpp
   src/velocity_filter.cpp
   src/config_parsing.cpp
   src/dynamic_sim.cpp
 )
-target_include_directories(elevated_control PUBLIC
+target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/osal>
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/osal/${OS}>
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/oshw/${OS}>
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/soem>
 )
-target_link_libraries(elevated_control
+target_link_libraries(${PROJECT_NAME}
   PUBLIC spdlog::spdlog
   PRIVATE elevated_soem yaml-cpp pthread rt
 )
@@ -74,8 +74,8 @@ install(
   DESTINATION include
 )
 install(
-  TARGETS elevated_control elevated_soem
-  EXPORT elevated_control_targets
+  TARGETS ${PROJECT_NAME} elevated_soem
+  EXPORT ${PROJECT_NAME}_targets
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
