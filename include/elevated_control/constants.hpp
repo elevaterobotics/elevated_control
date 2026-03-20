@@ -68,8 +68,13 @@ inline constexpr float kWristPitchBrakeOffThreshold = 0.05f;
 inline constexpr float kMaxWristPitchVelocity = 0.6f;
 inline constexpr float kMaxWristRollVelocity = 0.6f;
 
-// Mystery velocity multiplier from Synapticon firmware
-inline constexpr float kMysteryVelocityMultiplier = 10000.0f;
+// Admittance velocity scaling (matches synapticon ADMITTANCE_VELOCITY_MULTIPLIER)
+inline constexpr float kAdmittanceVelocityMultiplier = 10000.0f;
+
+// Wrist yaw soft limits for hand-guided mode (human-safe)
+inline constexpr float kWristYawHandGuidedSoftLimit = 2.5f;         // rad
+inline constexpr float kWristYawHandGuidedBrakeRamp = 0.2f;         // rad
+inline constexpr float kWristYawHandGuidedMaxBrakeTorque = 80.0f;  // per-mill
 
 // Spring adjust torque bounds (per-mille of rated torque)
 inline constexpr float kSpringAdjustMinTorque = 1000.0f;

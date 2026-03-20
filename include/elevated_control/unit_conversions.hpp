@@ -17,6 +17,8 @@ namespace elevated_control {
 inline std::vector<std::once_flag> startup_angle_wrap_flag(kNumJoints);
 inline std::vector<std::atomic<float>> startup_angle_wrap_value(kNumJoints);
 
+// On the first call for each joint, a one-time offset is computed (via std::call_once)
+// that brings the initial angle into [-pi, pi]. Handles multi-turn encoder accumulation.
 inline float InputTicksToOutputShaftRad(const std::int32_t ticks,
                                         const float mechanical_reduction,
                                         const std::uint32_t encoder_resolution,
@@ -26,11 +28,13 @@ inline float InputTicksToOutputShaftRad(const std::int32_t ticks,
       2.0f * static_cast<float>(M_PI) / mechanical_reduction;
 
   std::call_once(startup_angle_wrap_flag[joint_idx], [&]() {
-    if (unwrapped_angle > static_cast<float>(M_PI)) {
-      startup_angle_wrap_value[joint_idx] = -2.0f * static_cast<float>(M_PI);
-    } else if (unwrapped_angle < -static_cast<float>(M_PI)) {
-      startup_angle_wrap_value[joint_idx] = 2.0f * static_cast<float>(M_PI);
+    float wrapped = std::fmod(unwrapped_angle, 2.0f * static_cast<float>(M_PI));
+    if (wrapped > static_cast<float>(M_PI)) {
+      wrapped -= 2.0f * static_cast<float>(M_PI);
+    } else if (wrapped < -static_cast<float>(M_PI)) {
+      wrapped += 2.0f * static_cast<float>(M_PI);
     }
+    startup_angle_wrap_value[joint_idx] = wrapped - unwrapped_angle;
   });
 
   return unwrapped_angle + startup_angle_wrap_value[joint_idx];
@@ -81,6 +85,35 @@ inline std::int32_t OutputShaftRadPerSToInputTicksPerS(
   return static_cast<std::int32_t>(output_shaft_rad_per_sec *
                                    encoder_resolution * mechanical_reduction /
                                    (2.0f * static_cast<float>(M_PI)));
+}
+
+// Synapticon Velocity actual/demand: 0x60A9 = 0xFDB44700 => 0.001 RPM user units.
+// Unknown units fall back to legacy tick-based conversion.
+inline float VelocityValueToOutputShaftRadPerS(
+    std::int32_t velocity_value, std::int32_t si_velocity_unit,
+    float mechanical_reduction, std::uint32_t encoder_resolution) {
+  constexpr std::int32_t kMilliRpmUnit =
+      static_cast<std::int32_t>(0xFDB44700u);
+  if (si_velocity_unit == kMilliRpmUnit) {
+    return static_cast<float>(velocity_value) * 2.0f * static_cast<float>(M_PI) /
+           (60.0f * 1000.0f);
+  }
+  return InputTicksVelocityToOutputShaftRadPerS(velocity_value, mechanical_reduction,
+                                                encoder_resolution);
+}
+
+inline std::int32_t OutputShaftRadPerSToVelocityValue(
+    float output_shaft_rad_per_sec, std::int32_t si_velocity_unit,
+    float mechanical_reduction, std::uint32_t encoder_resolution) {
+  constexpr std::int32_t kMilliRpmUnit =
+      static_cast<std::int32_t>(0xFDB44700u);
+  if (si_velocity_unit == kMilliRpmUnit) {
+    return static_cast<std::int32_t>(output_shaft_rad_per_sec * 60.0f * 1000.0f /
+                                     (2.0f * static_cast<float>(M_PI)));
+  }
+  return OutputShaftRadPerSToInputTicksPerS(output_shaft_rad_per_sec,
+                                            mechanical_reduction,
+                                            encoder_resolution);
 }
 
 inline float SpringPotTicksToPayloadKg(const std::int32_t spring_pot_ticks) {
