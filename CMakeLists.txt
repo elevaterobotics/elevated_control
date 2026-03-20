@@ -34,6 +34,8 @@ target_include_directories(elevated_soem PUBLIC
 )
 
 # ---------- Main library ----------
+add_compile_options(-Wpedantic)
+
 find_package(spdlog REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
@@ -44,12 +46,9 @@ add_library(${PROJECT_NAME} SHARED
   src/config_parsing.cpp
   src/dynamic_sim.cpp
 )
-target_include_directories(${PROJECT_NAME} PUBLIC
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/osal>
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/osal/${OS}>
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/oshw/${OS}>
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/soem>
+target_include_directories(${PROJECT_NAME}
+  PUBLIC
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
 )
 target_link_libraries(${PROJECT_NAME}
   PUBLIC spdlog::spdlog
