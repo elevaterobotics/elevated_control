@@ -39,6 +39,7 @@ The build produces:
 - `libelevated_soem.a` -- static EtherCAT master library (SOEM/OSAL/OSHW)
 - `libelevated_control.so` -- shared library with the `ArmInterface` class
 - `basic_usage` -- example executable (with YAML copied beside it in the build tree; after install, YAML is under `share/elevated_control/` in the prefix)
+- `velocity_commands` -- streams slow velocity commands for 2 seconds after the loop is ready
 
 ## Tests
 
