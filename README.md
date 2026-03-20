@@ -6,6 +6,8 @@ simple `ArmInterface` class.
 
 ## Dependencies
 
+Tested on Ubuntu 24.04:
+
 | Dependency | Purpose |
 |---|---|
 | **GCC 13+** (or any C++23 compiler) | `std::expected`, `std::jthread` |
@@ -13,10 +15,8 @@ simple `ArmInterface` class.
 | **yaml-cpp** | Config file parsing (`libyaml-cpp-dev`) |
 | **pthread / rt** | Real-time threading (provided by glibc) |
 
-Install on Ubuntu 24.04:
-
 ```bash
-sudo apt install build-essential cmake libspdlog-dev libyaml-cpp-dev
+sudo apt install build-essential cmake libspdlog-dev libyaml-cpp-dev libgtest-dev
 ```
 
 ## Build
@@ -28,10 +28,17 @@ cmake ..
 make -j$(nproc)
 ```
 
-The build produces two artifacts:
+Optionally deploy to `CMAKE_INSTALL_PREFIX`, default `/usr/local`:
+
+```bash
+cmake --install .
+```
+
+The build produces:
 
 - `libelevated_soem.a` -- static EtherCAT master library (SOEM/OSAL/OSHW)
 - `libelevated_control.so` -- shared library with the `ArmInterface` class
+- `basic_usage` -- example executable (with YAML copied beside it in the build tree; after install, YAML is under `share/elevated_control/` in the prefix)
 
 ## Tests
 
@@ -39,7 +46,6 @@ Tests are built by default and require GTest (`libgtest-dev` on Ubuntu). To
 build and run them:
 
 ```bash
-sudo apt install libgtest-dev  # if not already installed
 cd elevated_control
 mkdir build && cd build
 cmake .. -DBUILD_TESTING=ON
@@ -61,7 +67,10 @@ target_link_libraries(my_app PRIVATE elevated_control)
 
 See [`examples/basic_usage.cpp`](examples/basic_usage.cpp) for a minimal
 program that initializes the arm, reads joint positions, then stops.
-It uses the config files in the same directory.
+It loads `joint_limits.yaml` and `elevate_config.yaml` from the directory
+containing the executable (after build, CMake copies them next to
+`basic_usage`; after `cmake --install`, they live under
+`share/elevated_control/` under the install prefix).
 
 EtherCAT requires root privileges for raw socket access:
 
