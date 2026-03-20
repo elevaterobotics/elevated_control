@@ -46,7 +46,6 @@ Tests are built by default and require GTest (`libgtest-dev` on Ubuntu). To
 build and run them:
 
 ```bash
-sudo apt install   # if not already installed
 cd elevated_control
 mkdir build && cd build
 cmake .. -DBUILD_TESTING=ON
