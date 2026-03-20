@@ -16,11 +16,6 @@
 
 #include <spdlog/spdlog.h>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpedantic"
-#include "ethercat.h"
-#pragma GCC diagnostic pop
-
 #include "elevated_control/config_parsing.hpp"
 #include "elevated_control/constants.hpp"
 #include "elevated_control/dynamic_sim.hpp"

@@ -12,6 +12,8 @@ add_subdirectory(external/SOEM)
 set_target_properties(soem PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # ---------- Main library ----------
+add_compile_options(-Wpedantic)
+
 find_package(spdlog REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
@@ -22,12 +24,15 @@ add_library(elevated_control SHARED
   src/config_parsing.cpp
   src/dynamic_sim.cpp
 )
-target_include_directories(elevated_control PUBLIC
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/external/SOEM/soem>
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/external/SOEM/osal>
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/external/SOEM/osal/linux>
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/external/SOEM/oshw/linux>
+target_include_directories(elevated_control
+  PUBLIC
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+  PRIVATE
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/external/SOEM>
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/external/SOEM/soem>
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/external/SOEM/osal>
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/external/SOEM/osal/linux>
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/external/SOEM/oshw/linux>
 )
 target_link_libraries(elevated_control
   PUBLIC spdlog::spdlog
