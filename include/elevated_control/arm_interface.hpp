@@ -70,6 +70,7 @@ class ArmInterface {
   std::expected<void, Error> Initialize();
   std::expected<void, Error> StartControlLoop(float control_rate_hz);
   std::expected<void, Error> StopControlLoop();
+  bool IsControlLoopReady() const noexcept;
 
   // -- Control mode --
 
