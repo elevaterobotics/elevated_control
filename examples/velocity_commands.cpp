@@ -31,12 +31,18 @@ int main() {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 
+  // Read initial joint positions
+  auto pos = arm.GetPositions();
+  if (pos) {
+    for (float p : *pos) spdlog::info("{:.4f}", p);
+  }
+
   // Output-shaft rad/s; wrist roll joint only, small rate. Re-issue before 200 ms
   // timeout in the control loop so velocity is held for the full window.
   std::vector<float> velocities(elevated_control::kNumJoints, 0.0f);
   velocities[6] = 0.02f;
 
-  const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+  const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(5);
   while (std::chrono::steady_clock::now() < end) {
     auto cmd = arm.SetVelocityCommand(velocities);
     if (!cmd) {
@@ -46,6 +52,12 @@ int main() {
     }
     // We need to send a new command faster than 200ms or the driver will timeout and stop the joint
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+
+  // Read final joint positions
+  pos = arm.GetPositions();
+  if (pos) {
+    for (float p : *pos) spdlog::info("{:.4f}", p);
   }
 
   arm.StopControlLoop();
