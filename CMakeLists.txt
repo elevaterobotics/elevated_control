@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
-project(elevated_control LANGUAGES C CXX)
+project(elevated_control VERSION 0.0.0 LANGUAGES C CXX)
+
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -34,90 +37,84 @@ target_include_directories(elevated_soem PUBLIC
 )
 
 # ---------- Main library ----------
+add_compile_options(-Wpedantic)
+
 find_package(spdlog REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
-add_library(elevated_control SHARED
+add_library(${PROJECT_NAME} SHARED
   src/arm_interface.cpp
   src/joint_admittance.cpp
   src/velocity_filter.cpp
   src/config_parsing.cpp
   src/dynamic_sim.cpp
 )
-target_include_directories(elevated_control PUBLIC
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/osal>
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/osal/${OS}>
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/oshw/${OS}>
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/soem>
+target_include_directories(${PROJECT_NAME}
+  PUBLIC
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
 )
-target_link_libraries(elevated_control
+target_link_libraries(${PROJECT_NAME}
   PUBLIC spdlog::spdlog
   PRIVATE elevated_soem yaml-cpp pthread rt
 )
 
 # ---------- Examples ----------
-add_executable(basic_usage examples/basic_usage.cpp)
-target_link_libraries(basic_usage PRIVATE elevated_control)
-target_include_directories(basic_usage PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/examples)
-
-add_executable(velocity_commands examples/velocity_commands.cpp)
-target_link_libraries(velocity_commands PRIVATE elevated_control)
-target_include_directories(velocity_commands PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/examples)
-
-set(EXAMPLE_CONFIG_YAMLS
-  ${CMAKE_CURRENT_SOURCE_DIR}/examples/joint_limits.yaml
-  ${CMAKE_CURRENT_SOURCE_DIR}/examples/elevate_config.yaml
-)
-foreach(exe basic_usage velocity_commands)
-  foreach(yaml ${EXAMPLE_CONFIG_YAMLS})
-    add_custom_command(
-      TARGET ${exe} POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${yaml}
-        $<TARGET_FILE_DIR:${exe}>
-      VERBATIM
-    )
-  endforeach()
-endforeach()
+option(BUILD_EXAMPLES "Build examples" ON)
+if(BUILD_EXAMPLES)
+  add_subdirectory(examples)
+endif()
 
 # ---------- Tests ----------
 option(BUILD_TESTING "Build tests" ON)
 if(BUILD_TESTING)
-  find_package(GTest REQUIRED)
-  include(GoogleTest)
-  enable_testing()
-
-  foreach(test_name
-    test_unit_conversions
-    test_velocity_filter
-    test_joint_admittance
-    test_config_parsing
-    test_joint_limits
-    test_stop
-  )
-    add_executable(${test_name} test/${test_name}.cpp)
-    target_link_libraries(${test_name} PRIVATE elevated_control GTest::gtest GTest::gtest_main)
-    gtest_discover_tests(${test_name})
-  endforeach()
+  add_subdirectory(test)
 endif()
 
 # ---------- Install ----------
 install(
   DIRECTORY include/
-  DESTINATION include
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 install(
-  TARGETS elevated_control elevated_soem
-  EXPORT elevated_control_targets
-  ARCHIVE DESTINATION lib
-  LIBRARY DESTINATION lib
-  RUNTIME DESTINATION bin
+  TARGETS ${PROJECT_NAME}
+  EXPORT ${PROJECT_NAME}Targets
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
-install(TARGETS basic_usage velocity_commands RUNTIME DESTINATION bin)
 install(
-  FILES examples/joint_limits.yaml examples/elevate_config.yaml
-  DESTINATION share/elevated_control
+  TARGETS elevated_soem
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+# ---------- Exporting for CMake find_package ----------
+set(${PROJECT_NAME}_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}")
+
+write_basic_package_version_file(
+  "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
+  VERSION ${PROJECT_VERSION}
+  COMPATIBILITY SameMajorVersion
+)
+
+configure_package_config_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/${PROJECT_NAME}Config.cmake.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+  INSTALL_DESTINATION "${${PROJECT_NAME}_INSTALL_CMAKEDIR}"
+)
+
+install(
+  EXPORT ${PROJECT_NAME}Targets
+  FILE ${PROJECT_NAME}Targets.cmake
+  NAMESPACE ${PROJECT_NAME}::
+  DESTINATION "${${PROJECT_NAME}_INSTALL_CMAKEDIR}"
+)
+
+install(
+  FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
+  DESTINATION "${${PROJECT_NAME}_INSTALL_CMAKEDIR}"
 )

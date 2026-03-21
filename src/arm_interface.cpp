@@ -2,6 +2,11 @@
 
 #include "elevated_control/arm_interface.hpp"
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+#include "ethercat.h"
+#pragma GCC diagnostic pop
+
 #include <algorithm>
 #include <array>
 #include <chrono>
