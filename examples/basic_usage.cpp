@@ -2,7 +2,7 @@
 #include "example_config_dir.hpp"
 
 #include <chrono>
-#include <thread>
+#include <cstdlib>
 
 int main() {
   const fs::path dir = ExampleConfigDir();
@@ -17,17 +17,19 @@ int main() {
   auto init = arm.Initialize();
   if (!init) {
     spdlog::error("Init failed: {}", init.error().message);
-    return 1;
+    return EXIT_FAILURE;
   }
 
   auto start = arm.StartControlLoop(200.0f);  // 200 Hz
   if (!start) {
     spdlog::error("Start failed: {}", start.error().message);
-    return 1;
+    return EXIT_FAILURE;
   }
 
-  while (!arm.IsControlLoopReady()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  if (!arm.WaitForLoopReady(std::chrono::seconds(10))) {
+    spdlog::error("Control loop did not become ready in time");
+    arm.StopControlLoop();
+    return EXIT_FAILURE;
   }
 
   // Read joint positions
@@ -38,4 +40,5 @@ int main() {
 
   // Stop and apply brakes
   arm.StopControlLoop();
+  return EXIT_SUCCESS;
 }

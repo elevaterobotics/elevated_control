@@ -67,6 +67,21 @@ class ArmInterface {
   std::expected<void, Error> StopControlLoop();
   bool IsControlLoopReady() const noexcept;
 
+  /// Poll until `IsControlLoopReady()` or `wait_time` elapses. Returns true if ready.
+  template <typename Rep, typename Period>
+  bool WaitForLoopReady(
+      std::chrono::duration<Rep, Period> wait_time) const {
+    const auto deadline =
+        std::chrono::steady_clock::now() + wait_time;
+    while (!IsControlLoopReady()) {
+      if (std::chrono::steady_clock::now() >= deadline) {
+        return false;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return true;
+  }
+
   // -- Control mode --
 
   std::expected<void, Error> SwitchControlMode(ControlLevel mode);
