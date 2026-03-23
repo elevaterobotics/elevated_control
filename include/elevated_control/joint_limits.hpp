@@ -104,7 +104,8 @@ inline void SetVelocityWithLimits(
     const std::vector<float>& min_position_limits,
     const std::vector<float>& max_position_limits,
     const float mechanical_reduction, const std::uint32_t encoder_resolution,
-    const float requested_velocity, OutSomanet50t* out_somanet) {
+    const float requested_velocity, const std::int32_t si_velocity_unit,
+    OutSomanet50t* out_somanet) {
   float output_velocity = requested_velocity;
   if (has_position_limits[joint_idx] &&
       std::isfinite(min_position_limits[joint_idx]) &&
@@ -121,7 +122,9 @@ inline void SetVelocityWithLimits(
       output_velocity = result.value().second;
     }
   }
-  out_somanet->TargetVelocity = static_cast<std::int32_t>(output_velocity);
+  out_somanet->TargetVelocity = OutputShaftRadPerSToVelocityValue(
+      output_velocity, si_velocity_unit, mechanical_reduction,
+      encoder_resolution);
   out_somanet->OpMode = kCyclicVelocityMode;
   out_somanet->VelocityOffset = 0;
 }

@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <deque>
@@ -64,6 +65,22 @@ class ArmInterface {
   std::expected<void, Error> Initialize();
   std::expected<void, Error> StartControlLoop(float control_rate_hz);
   std::expected<void, Error> StopControlLoop();
+  bool IsControlLoopReady() const noexcept;
+
+  /// Poll until `IsControlLoopReady()` or `wait_time` elapses. Returns true if ready.
+  template <typename Rep, typename Period>
+  bool WaitForLoopReady(
+      std::chrono::duration<Rep, Period> wait_time) const {
+    const auto deadline =
+        std::chrono::steady_clock::now() + wait_time;
+    while (!IsControlLoopReady()) {
+      if (std::chrono::steady_clock::now() >= deadline) {
+        return false;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return true;
+  }
 
   // -- Control mode --
 
@@ -190,15 +207,23 @@ class ArmInterface {
   std::vector<OutSomanet50t*> out_somanet_;
   std::atomic<int> wkc_{0};
   std::atomic<int> expected_wkc_{0};
+  std::atomic<int> pdo_exchange_count_{0};
 
-  // Per-joint mechanical params
-  std::deque<std::atomic<float>> mechanical_reductions_;
+  // Per-joint mechanical params (configured = torque/velocity scaling; position
+  // may differ when encoder is on output side, encoder_source == 2)
+  std::deque<std::atomic<float>> configured_reductions_;
+  std::deque<std::atomic<float>> position_reductions_;
+  std::deque<std::atomic<std::int32_t>> si_velocity_units_;
   std::deque<std::atomic<std::uint32_t>> encoder_resolutions_;
   std::deque<std::atomic<float>> rated_torques_;
 
   // Thread-safe command buffers
   std::deque<std::atomic<float>> threadsafe_commands_positions_;
   std::deque<std::atomic<float>> threadsafe_commands_velocities_;
+  // Monotonic timestamp (ns) of the last fresh velocity command per joint.
+  // StateMachineStep checks this to zero stale velocity commands.
+  std::array<std::atomic<int64_t>, kNumJoints> last_velocity_write_time_ns_{};
+  static constexpr int64_t VELOCITY_COMMAND_TIMEOUT_NS = 200'000'000;  // 200 ms
   std::deque<std::atomic<float>> threadsafe_commands_efforts_;
   std::deque<std::atomic<float>> threadsafe_commands_spring_adjust_;
 
