@@ -32,14 +32,6 @@ struct SpringAdjustState {
   std::optional<float> error_prev;
 };
 
-// Joint names in EtherCAT bus order, used for YAML config lookup
-inline const std::vector<std::string> kJointNames = {
-    "yaw_1_joint",          "yaw_2_joint",
-    "spring_adjust_joint",  "elevation_inertial_joint",
-    "wrist_yaw_joint",      "wrist_pitch_joint",
-    "wrist_roll_joint",
-};
-
 struct JointLimitsInfo {
   float min_position;
   float max_position;
@@ -86,25 +78,25 @@ class ArmInterface {
 
   std::expected<void, Error> SwitchControlMode(ControlLevel mode);
   std::expected<void, Error> SwitchControlMode(
-      const std::vector<ControlLevel>& per_joint_modes);
+      const JointControlLevelArray& per_joint_modes);
 
   // -- Streaming commands --
   // These also switch the control mode accordingly.
 
   std::expected<void, Error> SetPositionCommand(
-      const std::vector<float>& positions,
+      const JointFloatArray& positions,
       std::function<bool()> halt_condition = nullptr);
   std::expected<void, Error> SetVelocityCommand(
-      const std::vector<float>& velocities,
+      const JointFloatArray& velocities,
       std::function<bool()> halt_condition = nullptr);
   std::expected<void, Error> SetTorqueCommand(
-      const std::vector<float>& torques,
+      const JointFloatArray& torques,
       std::function<bool()> halt_condition = nullptr);
 
   // -- Generic command (per current mode) --
 
   std::expected<void, Error> SendCommand(
-      const std::vector<float>& joint_commands);
+      const JointFloatArray& joint_commands);
   std::expected<void, Error> SendCommand(
       const std::vector<JointName>& joints,
       const std::vector<float>& joint_commands);
@@ -121,10 +113,10 @@ class ArmInterface {
 
   // -- State queries --
 
-  std::expected<std::vector<float>, Error> GetPositions() const;
-  std::expected<std::vector<float>, Error> GetVelocities() const;
-  std::expected<std::vector<float>, Error> GetTorques() const;
-  std::expected<std::vector<float>, Error> GetAccelerations() const;
+  std::expected<JointFloatArray, Error> GetPositions() const;
+  std::expected<JointFloatArray, Error> GetVelocities() const;
+  std::expected<JointFloatArray, Error> GetTorques() const;
+  std::expected<JointFloatArray, Error> GetAccelerations() const;
 
   // -- GPIO --
 
@@ -135,7 +127,7 @@ class ArmInterface {
 
   // -- Joint limits --
 
-  std::expected<std::vector<JointLimitsInfo>, Error> GetJointLimits() const;
+  std::expected<JointArray<JointLimitsInfo>, Error> GetJointLimits() const;
 
  private:
   // EtherCAT cyclic control loop (runs in control_thread_)
@@ -182,7 +174,7 @@ class ArmInterface {
 
   // Internal mode switch implementation
   std::expected<void, Error> SwitchControlModeImpl(
-      const std::vector<ControlLevel>& new_modes);
+      const JointControlLevelArray& new_modes);
 
   // Config
   Config config_;
@@ -203,8 +195,8 @@ class ArmInterface {
 
   // EtherCAT
   char io_map_[4096]{};
-  std::vector<InSomanet50t*> in_somanet_;
-  std::vector<OutSomanet50t*> out_somanet_;
+  JointArray<InSomanet50t*> in_somanet_{};
+  JointArray<OutSomanet50t*> out_somanet_{};
   std::atomic<int> wkc_{0};
   std::atomic<int> expected_wkc_{0};
   std::atomic<int> pdo_exchange_count_{0};
@@ -232,14 +224,14 @@ class ArmInterface {
   std::function<bool()> halt_condition_;
 
   // Per-joint control modes
-  std::vector<ControlLevel> control_level_;
+  JointControlLevelArray control_level_{};
   mutable std::mutex hw_state_mtx_;
 
   // State readout (updated from control loop under mutex)
-  std::vector<float> state_positions_;
-  std::vector<float> state_velocities_;
-  std::vector<float> state_torques_;
-  std::vector<float> state_accelerations_;
+  JointFloatArray state_positions_{};
+  JointFloatArray state_velocities_{};
+  JointFloatArray state_torques_{};
+  JointFloatArray state_accelerations_{};
   std::atomic<float> hw_function_enable_{0.0f};
   std::atomic<float> hw_comp_button_{0.0f};
   std::atomic<float> hw_decomp_button_{0.0f};
@@ -249,9 +241,9 @@ class ArmInterface {
   DynamicSimulator dynamic_simulator_;
 
   // Joint limits
-  std::vector<bool> has_position_limits_;
-  std::vector<float> min_position_limits_;
-  std::vector<float> max_position_limits_;
+  JointBoolArray has_position_limits_{};
+  JointFloatArray min_position_limits_{};
+  JointFloatArray max_position_limits_{};
 
   // Config from YAML
   ElevateConfig elevate_config_;
@@ -261,7 +253,7 @@ class ArmInterface {
   std::atomic<float> spring_setpoint_target_{0.0f};
 
   // Admittance
-  std::vector<std::optional<JointAdmittance>> joint_admittances_;
+  JointArray<std::optional<JointAdmittance>> joint_admittances_{};
 
   // Filters
   VelocityFilter wrist_pitch_dial_filter_{0.3f};

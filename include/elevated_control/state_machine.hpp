@@ -2,9 +2,9 @@
 
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <optional>
-#include <vector>
 
 #include <spdlog/spdlog.h>
 
@@ -17,8 +17,8 @@ namespace elevated_control {
 // Bring the robot to a stop, optionally applying brakes.
 // If brakes are applied, the EtherCAT state machine transitions to
 // "Switch on disabled".
-inline void Stop(std::vector<OutSomanet50t*>& out_somanet, bool apply_brake,
-                 std::size_t joint_idx) {
+inline void Stop(std::array<OutSomanet50t*, kNumJoints>& out_somanet,
+                 bool apply_brake, std::size_t joint_idx) {
   out_somanet[joint_idx]->TargetTorque = 0;
   out_somanet[joint_idx]->TorqueOffset = 0;
   out_somanet[joint_idx]->TargetVelocity = 0;
@@ -47,9 +47,9 @@ inline void HandleFault(const InSomanet50t* in_somanet,
 }
 
 // Handle "Switch on disabled" state: stop and brake, manage pitch dial logic
-inline void HandleShutdown(std::vector<OutSomanet50t*>& out_somanet,
+inline void HandleShutdown(std::array<OutSomanet50t*, kNumJoints>& out_somanet,
                            std::size_t joint_idx,
-                           const std::vector<ControlLevel>& control_level,
+                           const JointControlLevelArray& control_level,
                            bool mode_switch_in_progress) {
   Stop(out_somanet, true, joint_idx);
 
@@ -60,14 +60,14 @@ inline void HandleShutdown(std::vector<OutSomanet50t*>& out_somanet,
   }
 }
 
-inline void HandleSwitchOn(std::vector<OutSomanet50t*>& out_somanet,
+inline void HandleSwitchOn(std::array<OutSomanet50t*, kNumJoints>& out_somanet,
                            std::size_t joint_idx) {
   out_somanet[joint_idx]->Controlword = 0b00000111;
 }
 
-inline void HandleEnableOperation(std::vector<OutSomanet50t*>& out_somanet,
-                                  std::size_t joint_idx,
-                                  bool mode_switch_in_progress) {
+inline void HandleEnableOperation(
+    std::array<OutSomanet50t*, kNumJoints>& out_somanet,
+    std::size_t joint_idx, bool mode_switch_in_progress) {
   if (!mode_switch_in_progress) {
     out_somanet[joint_idx]->Controlword = kNormalOpBrakesOff;
   }

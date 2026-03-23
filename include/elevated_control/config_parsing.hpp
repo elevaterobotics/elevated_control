@@ -4,14 +4,16 @@
 
 #include <cstdint>
 #include <string>
-#include <vector>
+
+#include "elevated_control/types.hpp"
 
 namespace elevated_control {
 
 struct JointLimitsConfig {
-  std::vector<bool> has_position_limits;
-  std::vector<float> min_position_limits;
-  std::vector<float> max_position_limits;
+  bool valid = false;
+  JointBoolArray has_position_limits{};
+  JointFloatArray min_position_limits{};
+  JointFloatArray max_position_limits{};
 };
 
 struct DialConfig {
@@ -54,9 +56,8 @@ struct ElevateConfig {
   VelocitySignConfig velocity_sign;
 };
 
-// Parse joint limits from YAML. joint_names lists the joint names in bus order.
-JointLimitsConfig ParseJointLimits(const std::string& joint_limits_file,
-                                   const std::vector<std::string>& joint_names);
+// Parse joint limits from YAML (fixed kNumJoints entries, bus order in kJointNames).
+JointLimitsConfig ParseJointLimits(const std::string& joint_limits_file);
 
 ElevateConfig ParseElevateConfig(const std::string& elevate_config_file);
 

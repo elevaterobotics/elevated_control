@@ -112,11 +112,11 @@ std::expected<void, Error> ArmInterface::Initialize() {
   }
 
   // Initialize command buffers
-  control_level_.resize(kNumJoints, ControlLevel::kUndefined);
-  state_positions_.resize(kNumJoints, std::numeric_limits<float>::quiet_NaN());
-  state_velocities_.resize(kNumJoints, std::numeric_limits<float>::quiet_NaN());
-  state_torques_.resize(kNumJoints, std::numeric_limits<float>::quiet_NaN());
-  state_accelerations_.resize(kNumJoints, std::numeric_limits<float>::quiet_NaN());
+  control_level_.fill(ControlLevel::kUndefined);
+  state_positions_.fill(std::numeric_limits<float>::quiet_NaN());
+  state_velocities_.fill(std::numeric_limits<float>::quiet_NaN());
+  state_torques_.fill(std::numeric_limits<float>::quiet_NaN());
+  state_accelerations_.fill(std::numeric_limits<float>::quiet_NaN());
 
   configured_reductions_.resize(kNumJoints);
   position_reductions_.resize(kNumJoints);
@@ -150,8 +150,7 @@ std::expected<void, Error> ArmInterface::Initialize() {
 
   // Parse joint limits
   if (!config_.joint_limits_yaml.empty()) {
-    auto joint_limits_config =
-        ParseJointLimits(config_.joint_limits_yaml, kJointNames);
+    auto joint_limits_config = ParseJointLimits(config_.joint_limits_yaml);
     if (!ValidateJointLimits(joint_limits_config)) {
       return std::unexpected(
           Error{ErrorCode::kInvalidArgument, "Invalid joint limits config"});
@@ -160,11 +159,9 @@ std::expected<void, Error> ArmInterface::Initialize() {
     min_position_limits_ = std::move(joint_limits_config.min_position_limits);
     max_position_limits_ = std::move(joint_limits_config.max_position_limits);
   } else {
-    has_position_limits_.resize(kNumJoints, false);
-    min_position_limits_.resize(kNumJoints,
-                                -std::numeric_limits<float>::max());
-    max_position_limits_.resize(kNumJoints,
-                                std::numeric_limits<float>::max());
+    has_position_limits_.fill(false);
+    min_position_limits_.fill(-std::numeric_limits<float>::max());
+    max_position_limits_.fill(std::numeric_limits<float>::max());
   }
 
   // Parse elevate config
@@ -233,13 +230,12 @@ std::expected<void, Error> ArmInterface::Initialize() {
   }
 
   // Connect PDO struct pointers
-  in_somanet_.clear();
-  out_somanet_.clear();
   for (std::size_t joint_idx = 1; joint_idx <= kNumJoints; ++joint_idx) {
-    in_somanet_.push_back(
-        reinterpret_cast<InSomanet50t*>(ec_slave[joint_idx].inputs));
-    out_somanet_.push_back(
-        reinterpret_cast<OutSomanet50t*>(ec_slave[joint_idx].outputs));
+    const std::size_t i = joint_idx - 1;
+    in_somanet_[i] =
+        reinterpret_cast<InSomanet50t*>(ec_slave[joint_idx].inputs);
+    out_somanet_[i] =
+        reinterpret_cast<OutSomanet50t*>(ec_slave[joint_idx].outputs);
   }
 
   // Verify slaves and read encoder / velocity scaling / rated torque per joint
@@ -320,10 +316,9 @@ std::expected<void, Error> ArmInterface::Initialize() {
   }
 
   // Initialize joint admittances (wrist roll only)
-  joint_admittances_.resize(kNumJoints);
-  joint_admittances_.at(kWristRollIdx).emplace();
-  if (!joint_admittances_.at(kWristRollIdx)->Init(10.0f, 500.0f)) {
-    joint_admittances_.at(kWristRollIdx).reset();
+  joint_admittances_[kWristRollIdx].emplace();
+  if (!joint_admittances_[kWristRollIdx]->Init(10.0f, 500.0f)) {
+    joint_admittances_[kWristRollIdx].reset();
     return std::unexpected(Error{ErrorCode::kEtherCATError,
                                  "Failed to init wrist roll admittance"});
   }
@@ -408,23 +403,18 @@ std::expected<void, Error> ArmInterface::StopControlLoop() {
 // ============================================================================
 
 std::expected<void, Error> ArmInterface::SwitchControlMode(ControlLevel mode) {
-  std::vector<ControlLevel> modes(kNumJoints, mode);
+  JointControlLevelArray modes;
+  modes.fill(mode);
   return SwitchControlModeImpl(modes);
 }
 
 std::expected<void, Error> ArmInterface::SwitchControlMode(
-    const std::vector<ControlLevel>& per_joint_modes) {
-  if (per_joint_modes.size() != kNumJoints) {
-    return std::unexpected(
-        Error{ErrorCode::kInvalidArgument,
-              "Expected " + std::to_string(kNumJoints) + " modes, got " +
-                  std::to_string(per_joint_modes.size())});
-  }
+    const JointControlLevelArray& per_joint_modes) {
   return SwitchControlModeImpl(per_joint_modes);
 }
 
 std::expected<void, Error> ArmInterface::SwitchControlModeImpl(
-    const std::vector<ControlLevel>& new_modes) {
+    const JointControlLevelArray& new_modes) {
   if (!control_loop_running_) {
     return std::unexpected(Error{ErrorCode::kControlLoopNotRunning,
                                  "Control loop not running"});
@@ -541,13 +531,8 @@ std::expected<void, Error> ArmInterface::SwitchControlModeImpl(
 // ============================================================================
 
 std::expected<void, Error> ArmInterface::SetPositionCommand(
-    const std::vector<float>& positions,
+    const JointFloatArray& positions,
     std::function<bool()> halt_condition) {
-  if (positions.size() != kNumJoints) {
-    return std::unexpected(
-        Error{ErrorCode::kInvalidArgument,
-              "Expected " + std::to_string(kNumJoints) + " values"});
-  }
   if (!control_loop_running_) {
     return std::unexpected(Error{ErrorCode::kControlLoopNotRunning,
                                  "Control loop not running"});
@@ -581,13 +566,8 @@ std::expected<void, Error> ArmInterface::SetPositionCommand(
 }
 
 std::expected<void, Error> ArmInterface::SetVelocityCommand(
-    const std::vector<float>& velocities,
+    const JointFloatArray& velocities,
     std::function<bool()> halt_condition) {
-  if (velocities.size() != kNumJoints) {
-    return std::unexpected(
-        Error{ErrorCode::kInvalidArgument,
-              "Expected " + std::to_string(kNumJoints) + " values"});
-  }
   if (!control_loop_running_) {
     return std::unexpected(Error{ErrorCode::kControlLoopNotRunning,
                                  "Control loop not running"});
@@ -627,13 +607,8 @@ std::expected<void, Error> ArmInterface::SetVelocityCommand(
 }
 
 std::expected<void, Error> ArmInterface::SetTorqueCommand(
-    const std::vector<float>& torques,
+    const JointFloatArray& torques,
     std::function<bool()> halt_condition) {
-  if (torques.size() != kNumJoints) {
-    return std::unexpected(
-        Error{ErrorCode::kInvalidArgument,
-              "Expected " + std::to_string(kNumJoints) + " values"});
-  }
   if (!control_loop_running_) {
     return std::unexpected(Error{ErrorCode::kControlLoopNotRunning,
                                  "Control loop not running"});
@@ -667,13 +642,7 @@ std::expected<void, Error> ArmInterface::SetTorqueCommand(
 // ============================================================================
 
 std::expected<void, Error> ArmInterface::SendCommand(
-    const std::vector<float>& joint_commands) {
-  if (joint_commands.size() != kNumJoints) {
-    return std::unexpected(
-        Error{ErrorCode::kInvalidArgument,
-              "Expected " + std::to_string(kNumJoints) +
-                  " commands, got " + std::to_string(joint_commands.size())});
-  }
+    const JointFloatArray& joint_commands) {
   if (!control_loop_running_) {
     return std::unexpected(Error{ErrorCode::kControlLoopNotRunning,
                                  "Control loop not running"});
@@ -793,7 +762,7 @@ std::expected<void, Error> ArmInterface::SetSpringSetpoint(
 // State queries
 // ============================================================================
 
-std::expected<std::vector<float>, Error> ArmInterface::GetPositions() const {
+std::expected<JointFloatArray, Error> ArmInterface::GetPositions() const {
   if (!control_loop_running_) {
     return std::unexpected(Error{ErrorCode::kControlLoopNotRunning,
                                  "Control loop not running"});
@@ -802,7 +771,7 @@ std::expected<std::vector<float>, Error> ArmInterface::GetPositions() const {
   return state_positions_;
 }
 
-std::expected<std::vector<float>, Error> ArmInterface::GetVelocities() const {
+std::expected<JointFloatArray, Error> ArmInterface::GetVelocities() const {
   if (!control_loop_running_) {
     return std::unexpected(Error{ErrorCode::kControlLoopNotRunning,
                                  "Control loop not running"});
@@ -811,7 +780,7 @@ std::expected<std::vector<float>, Error> ArmInterface::GetVelocities() const {
   return state_velocities_;
 }
 
-std::expected<std::vector<float>, Error> ArmInterface::GetTorques() const {
+std::expected<JointFloatArray, Error> ArmInterface::GetTorques() const {
   if (!control_loop_running_) {
     return std::unexpected(Error{ErrorCode::kControlLoopNotRunning,
                                  "Control loop not running"});
@@ -820,8 +789,7 @@ std::expected<std::vector<float>, Error> ArmInterface::GetTorques() const {
   return state_torques_;
 }
 
-std::expected<std::vector<float>, Error> ArmInterface::GetAccelerations()
-    const {
+std::expected<JointFloatArray, Error> ArmInterface::GetAccelerations() const {
   if (!control_loop_running_) {
     return std::unexpected(Error{ErrorCode::kControlLoopNotRunning,
                                  "Control loop not running"});
@@ -861,16 +829,13 @@ std::expected<std::vector<int>, Error> ArmInterface::GetDialState() const {
 // Joint limits
 // ============================================================================
 
-std::expected<std::vector<JointLimitsInfo>, Error>
+std::expected<JointArray<JointLimitsInfo>, Error>
 ArmInterface::GetJointLimits() const {
-  std::vector<JointLimitsInfo> limits(kNumJoints);
+  JointArray<JointLimitsInfo> limits{};
   for (std::size_t i = 0; i < kNumJoints; ++i) {
-    limits[i].has_limits =
-        (i < has_position_limits_.size()) ? has_position_limits_[i] : false;
-    limits[i].min_position =
-        (i < min_position_limits_.size()) ? min_position_limits_[i] : 0.0f;
-    limits[i].max_position =
-        (i < max_position_limits_.size()) ? max_position_limits_[i] : 0.0f;
+    limits[i].has_limits = has_position_limits_[i];
+    limits[i].min_position = min_position_limits_[i];
+    limits[i].max_position = max_position_limits_[i];
   }
   return limits;
 }
@@ -1131,7 +1096,8 @@ void ArmInterface::EcatCheck(std::stop_token stop_token) {
 // ============================================================================
 
 void ArmInterface::ControlLoop(std::stop_token stop_token) {
-  std::vector<bool> first_iteration(kNumJoints, true);
+  JointBoolArray first_iteration{};
+  first_iteration.fill(true);
 
   while (!stop_token.stop_requested() && !dynamic_sim_exited_) {
     const bool estop = EStopEngaged();

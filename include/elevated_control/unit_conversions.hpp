@@ -2,11 +2,11 @@
 
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <mutex>
-#include <vector>
 
 #include "elevated_control/types.hpp"
 
@@ -14,8 +14,8 @@ namespace elevated_control {
 
 // Startup angle wrap handling for single-turn encoders
 // TODO: remove this when multi-turn encoders are available
-inline std::vector<std::once_flag> startup_angle_wrap_flag(kNumJoints);
-inline std::vector<std::atomic<float>> startup_angle_wrap_value(kNumJoints);
+inline std::array<std::once_flag, kNumJoints> startup_angle_wrap_flag{};
+inline std::array<std::atomic<float>, kNumJoints> startup_angle_wrap_value{};
 
 // On the first call for each joint, a one-time offset is computed (via std::call_once)
 // that brings the initial angle into [-pi, pi]. Handles multi-turn encoder accumulation.

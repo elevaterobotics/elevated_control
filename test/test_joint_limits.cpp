@@ -4,6 +4,7 @@
 #include <limits>
 
 #include "elevated_control/joint_limits.hpp"
+#include "elevated_control/types.hpp"
 #include "elevated_control/unit_conversions.hpp"
 
 using namespace elevated_control;
@@ -17,9 +18,12 @@ class JointLimitTest : public ::testing::Test {
   void SetUp() override {
     joint_idx_ = 0;
     control_level_ = ControlLevel::kVelocity;
-    has_position_limits_.resize(1, true);
-    min_position_limits_.resize(1, -1.0f);
-    max_position_limits_.resize(1, 1.0f);
+    has_position_limits_.fill(false);
+    has_position_limits_[joint_idx_] = true;
+    min_position_limits_.fill(-std::numeric_limits<float>::max());
+    max_position_limits_.fill(std::numeric_limits<float>::max());
+    min_position_limits_[joint_idx_] = -1.0f;
+    max_position_limits_[joint_idx_] = 1.0f;
     current_position_ = 0.0f;
     requested_command_ = 0.0f;
 
@@ -29,9 +33,9 @@ class JointLimitTest : public ::testing::Test {
 
   size_t joint_idx_;
   ControlLevel control_level_;
-  std::vector<bool> has_position_limits_;
-  std::vector<float> min_position_limits_;
-  std::vector<float> max_position_limits_;
+  JointBoolArray has_position_limits_{};
+  JointFloatArray min_position_limits_{};
+  JointFloatArray max_position_limits_{};
   float current_position_;
   float requested_command_;
   InSomanet50t in_somanet_;

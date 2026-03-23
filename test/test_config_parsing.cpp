@@ -8,8 +8,6 @@
 class ConfigParsingTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    joint_names_ = {"joint1", "joint2"};
-
     test_dir_ =
         std::filesystem::temp_directory_path() / "config_parsing_test";
     std::filesystem::create_directories(test_dir_);
@@ -30,7 +28,6 @@ class ConfigParsingTest : public ::testing::Test {
     return filepath;
   }
 
-  std::vector<std::string> joint_names_;
   std::filesystem::path test_dir_;
 };
 
@@ -39,39 +36,45 @@ class ConfigParsingTest : public ::testing::Test {
 TEST_F(ConfigParsingTest, ParseJointLimitsValidFile) {
   std::string yaml_content = R"(
 joint_limits:
-  joint1:
+  yaw_1_joint:
     has_position_limits: true
     min_position: -1.5
     max_position: 1.5
-  joint2:
+  yaw_2_joint:
+    has_position_limits: false
+  spring_adjust_joint:
+    has_position_limits: false
+  elevation_inertial_joint:
+    has_position_limits: false
+  wrist_yaw_joint:
+    has_position_limits: false
+  wrist_pitch_joint:
+    has_position_limits: false
+  wrist_roll_joint:
     has_position_limits: false
 )";
 
   std::string filepath =
       CreateTestYamlFile("valid_joint_limits.yaml", yaml_content);
 
-  auto config =
-      elevated_control::ParseJointLimits(filepath, joint_names_);
+  auto config = elevated_control::ParseJointLimits(filepath);
 
-  EXPECT_EQ(config.has_position_limits.size(), 2u);
-  EXPECT_EQ(config.min_position_limits.size(), 2u);
-  EXPECT_EQ(config.max_position_limits.size(), 2u);
-
+  EXPECT_TRUE(config.valid);
   EXPECT_TRUE(config.has_position_limits[0]);
   EXPECT_FLOAT_EQ(config.min_position_limits[0], -1.5f);
   EXPECT_FLOAT_EQ(config.max_position_limits[0], 1.5f);
 
   EXPECT_FALSE(config.has_position_limits[1]);
   EXPECT_FLOAT_EQ(config.min_position_limits[1],
-                   -std::numeric_limits<float>::max());
+                  -std::numeric_limits<float>::max());
   EXPECT_FLOAT_EQ(config.max_position_limits[1],
-                   std::numeric_limits<float>::max());
+                  std::numeric_limits<float>::max());
 }
 
 TEST_F(ConfigParsingTest, ParseJointLimitsInvalidLimits) {
   std::string yaml_content = R"(
 joint_limits:
-  joint1:
+  yaw_1_joint:
     has_position_limits: true
     min_position: 2.0
     max_position: 1.0
@@ -80,19 +83,17 @@ joint_limits:
   std::string filepath =
       CreateTestYamlFile("invalid_joint_limits.yaml", yaml_content);
 
-  auto config =
-      elevated_control::ParseJointLimits(filepath, joint_names_);
+  auto config = elevated_control::ParseJointLimits(filepath);
 
-  EXPECT_TRUE(config.has_position_limits.empty());
+  EXPECT_FALSE(config.valid);
 }
 
 TEST_F(ConfigParsingTest, ParseJointLimitsNonExistentFile) {
   std::string filepath = (test_dir_ / "non_existent.yaml").string();
 
-  auto config =
-      elevated_control::ParseJointLimits(filepath, joint_names_);
+  auto config = elevated_control::ParseJointLimits(filepath);
 
-  EXPECT_TRUE(config.has_position_limits.empty());
+  EXPECT_FALSE(config.valid);
 }
 
 TEST_F(ConfigParsingTest, ParseJointLimitsMissingJointLimitsSection) {
@@ -104,16 +105,15 @@ other_section:
   std::string filepath =
       CreateTestYamlFile("missing_joint_limits.yaml", yaml_content);
 
-  auto config =
-      elevated_control::ParseJointLimits(filepath, joint_names_);
+  auto config = elevated_control::ParseJointLimits(filepath);
 
-  EXPECT_TRUE(config.has_position_limits.empty());
+  EXPECT_FALSE(config.valid);
 }
 
 TEST_F(ConfigParsingTest, ParseJointLimitsInvalidYaml) {
   std::string yaml_content = R"(
 joint_limits:
-  joint1:
+  yaw_1_joint:
     has_position_limits: true
     min_position: [invalid, yaml]
 )";
@@ -121,10 +121,9 @@ joint_limits:
   std::string filepath =
       CreateTestYamlFile("invalid_yaml.yaml", yaml_content);
 
-  auto config =
-      elevated_control::ParseJointLimits(filepath, joint_names_);
+  auto config = elevated_control::ParseJointLimits(filepath);
 
-  EXPECT_TRUE(config.has_position_limits.empty());
+  EXPECT_FALSE(config.valid);
 }
 
 // -- ParseElevateConfig tests --
@@ -251,9 +250,13 @@ TEST_F(ConfigParsingTest, ParseElevateConfigNonExistentFile) {
 
 TEST_F(ConfigParsingTest, ValidateJointLimitsValidConfig) {
   elevated_control::JointLimitsConfig config;
-  config.has_position_limits = {true, false};
-  config.min_position_limits = {-1.0f, -std::numeric_limits<float>::max()};
-  config.max_position_limits = {1.0f, std::numeric_limits<float>::max()};
+  config.valid = true;
+  config.has_position_limits.fill(false);
+  config.has_position_limits[0] = true;
+  config.min_position_limits.fill(-std::numeric_limits<float>::max());
+  config.max_position_limits.fill(std::numeric_limits<float>::max());
+  config.min_position_limits[0] = -1.0f;
+  config.max_position_limits[0] = 1.0f;
 
   bool result = elevated_control::ValidateJointLimits(config);
 

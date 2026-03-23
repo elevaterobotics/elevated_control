@@ -4,7 +4,8 @@
 #include <chrono>
 #include <cstdlib>
 #include <thread>
-#include <vector>
+
+#include "elevated_control/types.hpp"
 
 int main() {
   const fs::path dir = ExampleConfigDir();
@@ -42,7 +43,7 @@ int main() {
 
   // Output-shaft rad/s; wrist roll joint only, small rate. Re-issue before 200 ms
   // timeout in the control loop so velocity is held for the full window.
-  std::vector<float> velocities(elevated_control::kNumJoints, 0.0f);
+  elevated_control::JointFloatArray velocities{};
   velocities[6] = 0.02f;
 
   const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(5);

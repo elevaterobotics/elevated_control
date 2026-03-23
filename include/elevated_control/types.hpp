@@ -2,8 +2,10 @@
 
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 namespace elevated_control {
 
@@ -28,6 +30,25 @@ enum class ControlLevel : std::uint8_t {
   kTorque = 4,
   kQuickStop = 5,
   kSpringAdjust = 6,
+};
+
+/// Fixed-size container for per-joint values (EtherCAT bus order).
+template <typename T>
+using JointArray = std::array<T, kNumJoints>;
+
+using JointFloatArray = JointArray<float>;
+using JointBoolArray = JointArray<bool>;
+using JointControlLevelArray = JointArray<ControlLevel>;
+
+/// Joint names in EtherCAT bus order, used for YAML config lookup.
+inline constexpr std::array<std::string_view, kNumJoints> kJointNames = {
+    "yaw_1_joint",
+    "yaw_2_joint",
+    "spring_adjust_joint",
+    "elevation_inertial_joint",
+    "wrist_yaw_joint",
+    "wrist_pitch_joint",
+    "wrist_roll_joint",
 };
 
 enum class ErrorCode : std::uint8_t {

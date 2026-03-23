@@ -1,12 +1,15 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.18)
 project(elevated_control VERSION 0.0.0 LANGUAGES C CXX)
 
+include(CTest)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+# Help the loader find libelevated_control.so in this build tree when RUNPATH is used.
+set(CMAKE_BUILD_RPATH "${CMAKE_BINARY_DIR}")
 
 add_compile_options(-Wall -Wextra)
 # SOEM is C and uses -Werror; -Wpedantic on C breaks the submodule build. Apply to C++ only.
