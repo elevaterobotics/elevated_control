@@ -8,6 +8,7 @@ foreach(test_name
   test_config_parsing
   test_joint_limits
   test_stop
+  test_streaming_spring_slot
 )
   add_executable(${test_name} ${test_name}.cpp)
   target_link_libraries(${test_name} PRIVATE ${PROJECT_NAME} GTest::gtest GTest::gtest_main)

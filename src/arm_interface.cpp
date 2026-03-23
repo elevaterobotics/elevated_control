@@ -46,6 +46,15 @@ bool InterfaceExists(const char* ifname) {
   return exists;
 }
 
+/// Per-joint modes for Set* streaming: kinematic mode on all joints except
+/// spring_adjust, which stays in kSpringAdjust (SetSpringSetpoint).
+JointControlLevelArray MakeStreamingModes(ControlLevel mode) {
+  JointControlLevelArray m;
+  m.fill(mode);
+  m[kSpringAdjustIdx] = ControlLevel::kSpringAdjust;
+  return m;
+}
+
 }  // namespace
 
 // SDO read (defined in state_machine.hpp, implemented here)
@@ -538,16 +547,27 @@ std::expected<void, Error> ArmInterface::SetPositionCommand(
                                  "Control loop not running"});
   }
 
-  // Switch to position mode if not already
+  if (!IsSpringStreamingCommandSlotUnused(positions[kSpringAdjustIdx])) {
+    return std::unexpected(
+        Error{ErrorCode::kInvalidArgument,
+              "spring_adjust_joint slot must be NaN; use SetSpringSetpoint "
+              "for load"});
+  }
+
   bool need_switch = false;
   for (std::size_t i = 0; i < kNumJoints; ++i) {
-    if (control_level_[i] != ControlLevel::kPosition) {
+    if (i == kSpringAdjustIdx) {
+      if (control_level_[i] != ControlLevel::kSpringAdjust) {
+        need_switch = true;
+        break;
+      }
+    } else if (control_level_[i] != ControlLevel::kPosition) {
       need_switch = true;
       break;
     }
   }
   if (need_switch) {
-    auto result = SwitchControlMode(ControlLevel::kPosition);
+    auto result = SwitchControlMode(MakeStreamingModes(ControlLevel::kPosition));
     if (!result) return result;
   }
 
@@ -557,6 +577,7 @@ std::expected<void, Error> ArmInterface::SetPositionCommand(
   }
 
   for (std::size_t i = 0; i < kNumJoints; ++i) {
+    if (i == kSpringAdjustIdx) continue;
     float pos_red = position_reductions_[i].load();
     std::uint32_t enc_res = encoder_resolutions_[i].load();
     threadsafe_commands_positions_[i] = static_cast<float>(
@@ -573,15 +594,27 @@ std::expected<void, Error> ArmInterface::SetVelocityCommand(
                                  "Control loop not running"});
   }
 
+  if (!IsSpringStreamingCommandSlotUnused(velocities[kSpringAdjustIdx])) {
+    return std::unexpected(
+        Error{ErrorCode::kInvalidArgument,
+              "spring_adjust_joint slot must be NaN; use SetSpringSetpoint "
+              "for load"});
+  }
+
   bool need_switch = false;
   for (std::size_t i = 0; i < kNumJoints; ++i) {
-    if (control_level_[i] != ControlLevel::kVelocity) {
+    if (i == kSpringAdjustIdx) {
+      if (control_level_[i] != ControlLevel::kSpringAdjust) {
+        need_switch = true;
+        break;
+      }
+    } else if (control_level_[i] != ControlLevel::kVelocity) {
       need_switch = true;
       break;
     }
   }
   if (need_switch) {
-    auto result = SwitchControlMode(ControlLevel::kVelocity);
+    auto result = SwitchControlMode(MakeStreamingModes(ControlLevel::kVelocity));
     if (!result) return result;
   }
 
@@ -591,6 +624,7 @@ std::expected<void, Error> ArmInterface::SetVelocityCommand(
   }
 
   for (std::size_t i = 0; i < kNumJoints; ++i) {
+    if (i == kSpringAdjustIdx) continue;
     float cfg_red = configured_reductions_[i].load();
     std::uint32_t enc_res = encoder_resolutions_[i].load();
     threadsafe_commands_velocities_[i] = static_cast<float>(
@@ -601,6 +635,7 @@ std::expected<void, Error> ArmInterface::SetVelocityCommand(
   const int64_t now_ns =
       std::chrono::steady_clock::now().time_since_epoch().count();
   for (std::size_t i = 0; i < kNumJoints; ++i) {
+    if (i == kSpringAdjustIdx) continue;
     last_velocity_write_time_ns_[i].store(now_ns, std::memory_order_release);
   }
   return {};
@@ -614,15 +649,27 @@ std::expected<void, Error> ArmInterface::SetTorqueCommand(
                                  "Control loop not running"});
   }
 
+  if (!IsSpringStreamingCommandSlotUnused(torques[kSpringAdjustIdx])) {
+    return std::unexpected(
+        Error{ErrorCode::kInvalidArgument,
+              "spring_adjust_joint slot must be NaN; use SetSpringSetpoint "
+              "for load"});
+  }
+
   bool need_switch = false;
   for (std::size_t i = 0; i < kNumJoints; ++i) {
-    if (control_level_[i] != ControlLevel::kTorque) {
+    if (i == kSpringAdjustIdx) {
+      if (control_level_[i] != ControlLevel::kSpringAdjust) {
+        need_switch = true;
+        break;
+      }
+    } else if (control_level_[i] != ControlLevel::kTorque) {
       need_switch = true;
       break;
     }
   }
   if (need_switch) {
-    auto result = SwitchControlMode(ControlLevel::kTorque);
+    auto result = SwitchControlMode(MakeStreamingModes(ControlLevel::kTorque));
     if (!result) return result;
   }
 
@@ -632,6 +679,7 @@ std::expected<void, Error> ArmInterface::SetTorqueCommand(
   }
 
   for (std::size_t i = 0; i < kNumJoints; ++i) {
+    if (i == kSpringAdjustIdx) continue;
     threadsafe_commands_efforts_[i] = std::clamp(torques[i], -1000.0f, 1000.0f);
   }
   return {};

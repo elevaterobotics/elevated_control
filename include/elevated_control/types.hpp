@@ -3,6 +3,7 @@
 #pragma once
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -39,6 +40,11 @@ using JointArray = std::array<T, kNumJoints>;
 using JointFloatArray = JointArray<float>;
 using JointBoolArray = JointArray<bool>;
 using JointControlLevelArray = JointArray<ControlLevel>;
+
+/// This checks if the user properly set the spring adjust command to NaN in a streaming command.
+inline bool IsSpringStreamingCommandSlotUnused(float v) {
+  return std::isnan(v);
+}
 
 /// Joint names in EtherCAT bus order, used for YAML config lookup.
 inline constexpr std::array<std::string_view, kNumJoints> kJointNames = {
