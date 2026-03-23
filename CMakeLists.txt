@@ -9,13 +9,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_compile_options(-Wall -Wextra)
+# SOEM is C and uses -Werror; -Wpedantic on C breaks the submodule build. Apply to C++ only.
+add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Wpedantic>)
 
 # ---------- SOEM static library ----------
 add_subdirectory(external/SOEM)
 set_target_properties(soem PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # ---------- Main library ----------
-add_compile_options(-Wpedantic)
 
 find_package(spdlog REQUIRED)
 find_package(yaml-cpp REQUIRED)
@@ -67,12 +68,6 @@ install(
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
-install(
-  TARGETS elevated_soem
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
 
 # ---------- Exporting for CMake find_package ----------
 set(${PROJECT_NAME}_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}")
@@ -97,12 +92,6 @@ install(
 )
 
 install(
-  TARGETS soem
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
-
   FILES
     "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
