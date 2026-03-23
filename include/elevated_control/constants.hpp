@@ -59,10 +59,10 @@ inline constexpr unsigned int kCyclicLoopSleepUs = 5000;
 // synapticon_ros2_control::SynapticonSystemInterface::read). At ~5 ms/cycle, 200 ≈ 1 s.
 inline constexpr int kMinPdoExchanges = 200;
 
-// Deadband for wrist pitch dial (matches synapticon WRIST_PITCH_DEADBAND)
+// Deadband for wrist pitch dial
 inline constexpr float kWristPitchDeadband = 0.05f;
 inline constexpr float kWristRollDeadband = 0.1f;
-// Brake hysteresis for hand-guided pitch (matches synapticon)
+// Brake hysteresis for hand-guided pitch
 inline constexpr float kWristPitchBrakeOnThreshold = 0.01f;
 inline constexpr float kWristPitchBrakeOffThreshold = 0.02f;
 

@@ -1371,7 +1371,7 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
                               out_somanet_[joint_idx]);
         out_somanet_[joint_idx]->Controlword = kNormalOpBrakesOff;
       }
-      // Wrist pitch (dial controlled; matches synapticon HAND_GUIDED)
+      // Wrist pitch (dial controlled)
       else if (joint_idx == kWristPitchIdx) {
         if (!deadman_pressed) {
           SetVelocityWithLimits(joint_idx, in_somanet_[joint_idx],
@@ -1396,7 +1396,6 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
             return;
           }
 
-          const std::int32_t raw_pitch_dial = *wrist_pitch_dial_value;
           *wrist_pitch_dial_value = std::clamp(
               *wrist_pitch_dial_value,
               elevate_config_.button_config.pitch_dial.min,
@@ -1407,16 +1406,6 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
                   elevate_config_.button_config.pitch_dial.center) /
               (0.5f * (elevate_config_.button_config.pitch_dial.max -
                        elevate_config_.button_config.pitch_dial.min));
-
-          static int pitch_log_count = 0;
-          if (pitch_log_count++ % 200 == 0) {
-            spdlog::debug(
-                "Pitch dial: raw={} clamped={} center={} normalized={:.4f} "
-                "brake={}",
-                raw_pitch_dial, *wrist_pitch_dial_value,
-                elevate_config_.button_config.pitch_dial.center, normalized_dial,
-                hand_guided_pitch_brake_state_ ? "ON" : "OFF");
-          }
 
           if (std::abs(normalized_dial) < kWristPitchDeadband) {
             normalized_dial = 0.0f;
@@ -1438,6 +1427,8 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
           }
           velocity = wrist_pitch_dial_filter_.Filter(velocity);
 
+            // Put the brakes on to save some actuator effort, if the dial isn't being used
+            // Use hysteresis to avoid chattering
           if (std::abs(normalized_dial) < kWristPitchBrakeOnThreshold) {
             Stop(out_somanet_, true, joint_idx);
             hand_guided_pitch_brake_state_ = true;
