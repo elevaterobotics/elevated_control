@@ -59,7 +59,7 @@ class ArmInterface {
   std::expected<void, Error> StopControlLoop();
   bool IsControlLoopReady() const noexcept;
 
-  /// Poll until `IsControlLoopReady()` or `wait_time` elapses. Returns true if ready.
+  // Poll until `IsControlLoopReady()` or `wait_time` elapses. Returns true if ready.
   template <typename Rep, typename Period>
   bool WaitForLoopReady(
       std::chrono::duration<Rep, Period> wait_time) const {
@@ -76,12 +76,15 @@ class ArmInterface {
 
   // -- Control mode --
 
+  // Sets every joint to `mode`. For mixed control modes (e.g. velocity and position),
+  // use `SendCommand`.
   std::expected<void, Error> SwitchControlMode(ControlLevel mode);
   std::expected<void, Error> SwitchControlMode(
       const JointControlLevelArray& per_joint_modes);
 
   // -- Streaming commands --
-  // These also switch the control mode accordingly.
+  // These commands ignore the spring adjust joint. The spring adjust value in the array must be NaN.
+  // Use `SetSpringSetpoint` to command spring load.
 
   std::expected<void, Error> SetPositionCommand(
       const JointFloatArray& positions,
@@ -94,6 +97,7 @@ class ArmInterface {
       std::function<bool()> halt_condition = nullptr);
 
   // -- Generic command (per current mode) --
+  // This is the way to use a different control mode for each joint.
 
   std::expected<void, Error> SendCommand(
       const JointFloatArray& joint_commands);

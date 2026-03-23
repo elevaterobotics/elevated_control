@@ -3,6 +3,8 @@
 #pragma once
 
 #include <array>
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -22,6 +24,11 @@ enum class JointName : std::uint8_t {
   kWristRoll = 6,
 };
 
+// Get EtherCAT bus index for `JointArray` / per-joint vectors (enum values are 0..kNumJoints-1).
+constexpr std::size_t JointIndex(JointName j) noexcept {
+  return static_cast<std::size_t>(j);
+}
+
 enum class ControlLevel : std::uint8_t {
   kUndefined = 0,
   kHandGuided = 1,
@@ -32,7 +39,7 @@ enum class ControlLevel : std::uint8_t {
   kSpringAdjust = 6,
 };
 
-/// Fixed-size container for per-joint values (EtherCAT bus order).
+// Fixed-size container for per-joint values (EtherCAT bus order).
 template <typename T>
 using JointArray = std::array<T, kNumJoints>;
 
@@ -40,7 +47,12 @@ using JointFloatArray = JointArray<float>;
 using JointBoolArray = JointArray<bool>;
 using JointControlLevelArray = JointArray<ControlLevel>;
 
-/// Joint names in EtherCAT bus order, used for YAML config lookup.
+// This checks if the user properly set the spring adjust command to NaN in a streaming command.
+inline bool IsSpringStreamingCommandSlotUnused(float v) {
+  return std::isnan(v);
+}
+
+// Joint names in EtherCAT bus order, used for YAML config lookup.
 inline constexpr std::array<std::string_view, kNumJoints> kJointNames = {
     "yaw_1_joint",
     "yaw_2_joint",
