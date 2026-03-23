@@ -42,11 +42,10 @@ int main() {
     for (float p : *pos) spdlog::info("{:.4f}", p);
   }
 
-  // Output-shaft rad/s; wrist roll joint only, small rate. Re-issue before 200 ms
-  // timeout in the control loop so velocity is held for the full window.
+  // Send a slow velocity command to the wrist roll joint
   elevated_control::JointFloatArray velocities{};
   // spring_adjust_joint (index 2) must be NaN for SetVelocityCommand()
-  // Use SetSpringSetpoint to adjust the spring load.
+  // Use SetSpringSetpoint() instead if you want to adjust the spring load.
   velocities[elevated_control::JointIndex(
       elevated_control::JointName::kSpringAdjust)] =
       std::numeric_limits<float>::quiet_NaN();

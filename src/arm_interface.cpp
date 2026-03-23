@@ -143,14 +143,11 @@ std::expected<void, Error> ArmInterface::Initialize() {
   threadsafe_commands_positions_.resize(kNumJoints);
   threadsafe_commands_velocities_.resize(kNumJoints);
   threadsafe_commands_efforts_.resize(kNumJoints);
-  threadsafe_commands_spring_adjust_.resize(kNumJoints);
   for (std::size_t i = 0; i < kNumJoints; ++i) {
     threadsafe_commands_positions_[i] =
         std::numeric_limits<float>::quiet_NaN();
     threadsafe_commands_velocities_[i] = 0.0f;
     threadsafe_commands_efforts_[i] =
-        std::numeric_limits<float>::quiet_NaN();
-    threadsafe_commands_spring_adjust_[i] =
         std::numeric_limits<float>::quiet_NaN();
   }
 
@@ -499,8 +496,6 @@ std::expected<void, Error> ArmInterface::SwitchControlModeImpl(
     last_velocity_write_time_ns_[i].store(0, std::memory_order_relaxed);
     threadsafe_commands_efforts_[i] =
         std::numeric_limits<float>::quiet_NaN();
-    threadsafe_commands_spring_adjust_[i] =
-        std::numeric_limits<float>::quiet_NaN();
   }
 
   // Handle spring adjust mode
@@ -692,6 +687,8 @@ std::expected<void, Error> ArmInterface::SetTorqueCommand(
 // Generic commands
 // ============================================================================
 
+// Joint commands for joints in kSpringAdjust are ignored; use SetSpringSetpoint
+// for the spring load / potentiometer target.
 std::expected<void, Error> ArmInterface::SendCommand(
     const JointFloatArray& joint_commands) {
   if (!control_loop_running_) {
@@ -722,9 +719,6 @@ std::expected<void, Error> ArmInterface::SendCommand(
       case ControlLevel::kTorque:
         threadsafe_commands_efforts_[i] =
             std::clamp(joint_commands[i], -1000.0f, 1000.0f);
-        break;
-      case ControlLevel::kSpringAdjust:
-        threadsafe_commands_spring_adjust_[i] = joint_commands[i];
         break;
       default:
         break;
