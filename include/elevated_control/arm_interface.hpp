@@ -59,7 +59,7 @@ class ArmInterface {
   std::expected<void, Error> StopControlLoop();
   bool IsControlLoopReady() const noexcept;
 
-  /// Poll until `IsControlLoopReady()` or `wait_time` elapses. Returns true if ready.
+  // Poll until `IsControlLoopReady()` or `wait_time` elapses. Returns true if ready.
   template <typename Rep, typename Period>
   bool WaitForLoopReady(
       std::chrono::duration<Rep, Period> wait_time) const {
@@ -76,7 +76,7 @@ class ArmInterface {
 
   // -- Control mode --
 
-  /// Sets every joint to `mode`. For mixed streaming control (e.g. velocity and postion),
+  // Sets every joint to `mode`. For mixed control modes (e.g. velocity and position),
   // use `SendCommand`.
   std::expected<void, Error> SwitchControlMode(ControlLevel mode);
   std::expected<void, Error> SwitchControlMode(
