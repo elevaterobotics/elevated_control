@@ -221,7 +221,6 @@ class ArmInterface {
   std::array<std::atomic<int64_t>, kNumJoints> last_velocity_write_time_ns_{};
   static constexpr int64_t VELOCITY_COMMAND_TIMEOUT_NS = 200'000'000;  // 200 ms
   std::deque<std::atomic<float>> threadsafe_commands_efforts_;
-  std::deque<std::atomic<float>> threadsafe_commands_spring_adjust_;
 
   // Halt condition (set by Set*Command, checked in control loop)
   std::mutex halt_mutex_;
