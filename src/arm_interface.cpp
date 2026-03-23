@@ -515,12 +515,13 @@ std::expected<void, Error> ArmInterface::SwitchControlModeImpl(
   // One control cycle of delay
   osal_usleep(kCyclicLoopSleepUs);
 
-  // Release brakes for non-undefined modes
+  // Release brakes for certain modes (hand-guided waits for deadman in loop)
   {
     std::lock_guard<std::mutex> lock(hw_state_mtx_);
     for (std::size_t i = 0; i < kNumJoints; ++i) {
       if (control_level_[i] != ControlLevel::kUndefined &&
-          control_level_[i] != ControlLevel::kQuickStop) {
+          control_level_[i] != ControlLevel::kQuickStop &&
+          control_level_[i] != ControlLevel::kHandGuided) {
         out_somanet_[i]->Controlword = kNormalOpBrakesOff;
       }
     }
@@ -1315,7 +1316,8 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
   }
   // Switched on
   if ((statusword & 0x006F) == 0x0023) {
-    HandleEnableOperation(out_somanet_, joint_idx, mode_switch_in_progress_);
+    HandleEnableOperation(out_somanet_, joint_idx, mode_switch_in_progress_,
+                          control_level_[joint_idx], deadman_pressed);
     return;
   }
   // Quick stop active
@@ -1343,6 +1345,13 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
 
   // --- Hand-guided ---
   if (control_level_[joint_idx] == ControlLevel::kHandGuided) {
+    if (!deadman_pressed) {
+      if (!mode_switch) {
+        Stop(out_somanet_, true, joint_idx);
+      }
+      return;
+    }
+
     spdlog::warn("deadman_pressed in StateMachineStep: {}", deadman_pressed);
 
     if ((joint_idx != kSpringAdjustIdx) &&
@@ -1379,85 +1388,71 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
       }
       // Wrist pitch (dial controlled)
       else if (joint_idx == kWristPitchIdx) {
-        if (!deadman_pressed) {
-          SetVelocityWithLimits(joint_idx, in_somanet_[joint_idx],
-                                has_position_limits_, min_position_limits_,
-                                max_position_limits_,
-                                position_reductions_[joint_idx].load(),
-                                encoder_resolutions_[joint_idx].load(), 0.0f,
-                                si_velocity_units_[joint_idx].load(),
-                                out_somanet_[joint_idx]);
+        std::optional<std::int32_t> wrist_pitch_dial_value = ReadSDOValue(
+            static_cast<std::uint16_t>(kWristRollIdx + 1), 0x2402, 0x00);
+        if (!wrist_pitch_dial_value) {
+          spdlog::error("ReadSDOValue() failed for pitch dial");
+          Stop(out_somanet_, true, joint_idx);
+          hand_guided_pitch_brake_state_ = true;
           wrist_pitch_dial_filter_.Reset();
+          return;
+        }
+
+        *wrist_pitch_dial_value = std::clamp(
+            *wrist_pitch_dial_value,
+            elevate_config_.button_config.pitch_dial.min,
+            elevate_config_.button_config.pitch_dial.max);
+        float normalized_dial =
+            -static_cast<float>(
+                *wrist_pitch_dial_value -
+                elevate_config_.button_config.pitch_dial.center) /
+            (0.5f * (elevate_config_.button_config.pitch_dial.max -
+                     elevate_config_.button_config.pitch_dial.min));
+
+        if (std::abs(normalized_dial) < kWristPitchDeadband) {
+          normalized_dial = 0.0f;
+        }
+
+        float velocity = 0.0f;
+        const float v_max = kMaxWristPitchVelocity;
+        const float slope = v_max / (1.0f - kWristPitchDeadband);
+        if (normalized_dial > 1.0f) {
+          velocity = v_max;
+        } else if (normalized_dial >= kWristPitchDeadband &&
+                   normalized_dial <= 1.0f) {
+          velocity = slope * (normalized_dial - kWristPitchDeadband);
+        } else if (normalized_dial < -1.0f) {
+          velocity = -v_max;
+        } else if (normalized_dial <= -kWristPitchDeadband &&
+                   normalized_dial >= -1.0f) {
+          velocity = slope * (normalized_dial - (-1.0f)) - v_max;
+        }
+        velocity = wrist_pitch_dial_filter_.Filter(velocity);
+
+        // Put the brakes on to save some actuator effort, if the dial isn't being used
+        // Use hysteresis to avoid chattering
+        if (std::abs(normalized_dial) < kWristPitchBrakeOnThreshold) {
+          Stop(out_somanet_, true, joint_idx);
+          hand_guided_pitch_brake_state_ = true;
+        } else if (hand_guided_pitch_brake_state_ &&
+                   std::abs(normalized_dial) > kWristPitchBrakeOffThreshold) {
           if (!mode_switch) {
             out_somanet_[joint_idx]->Controlword = kNormalOpBrakesOff;
           }
+          hand_guided_pitch_brake_state_ = false;
+          SetVelocityWithLimits(
+              joint_idx, in_somanet_[joint_idx], has_position_limits_,
+              min_position_limits_, max_position_limits_,
+              position_reductions_[joint_idx].load(),
+              encoder_resolutions_[joint_idx].load(), velocity,
+              si_velocity_units_[joint_idx].load(), out_somanet_[joint_idx]);
         } else {
-          std::optional<std::int32_t> wrist_pitch_dial_value = ReadSDOValue(
-              static_cast<std::uint16_t>(kWristRollIdx + 1), 0x2402, 0x00);
-          if (!wrist_pitch_dial_value) {
-            spdlog::error("ReadSDOValue() failed for pitch dial");
-            Stop(out_somanet_, true, joint_idx);
-            hand_guided_pitch_brake_state_ = true;
-            wrist_pitch_dial_filter_.Reset();
-            return;
-          }
-
-          *wrist_pitch_dial_value = std::clamp(
-              *wrist_pitch_dial_value,
-              elevate_config_.button_config.pitch_dial.min,
-              elevate_config_.button_config.pitch_dial.max);
-          float normalized_dial =
-              -static_cast<float>(
-                  *wrist_pitch_dial_value -
-                  elevate_config_.button_config.pitch_dial.center) /
-              (0.5f * (elevate_config_.button_config.pitch_dial.max -
-                       elevate_config_.button_config.pitch_dial.min));
-
-          if (std::abs(normalized_dial) < kWristPitchDeadband) {
-            normalized_dial = 0.0f;
-          }
-
-          float velocity = 0.0f;
-          const float v_max = kMaxWristPitchVelocity;
-          const float slope = v_max / (1.0f - kWristPitchDeadband);
-          if (normalized_dial > 1.0f) {
-            velocity = v_max;
-          } else if (normalized_dial >= kWristPitchDeadband &&
-                     normalized_dial <= 1.0f) {
-            velocity = slope * (normalized_dial - kWristPitchDeadband);
-          } else if (normalized_dial < -1.0f) {
-            velocity = -v_max;
-          } else if (normalized_dial <= -kWristPitchDeadband &&
-                     normalized_dial >= -1.0f) {
-            velocity = slope * (normalized_dial - (-1.0f)) - v_max;
-          }
-          velocity = wrist_pitch_dial_filter_.Filter(velocity);
-
-            // Put the brakes on to save some actuator effort, if the dial isn't being used
-            // Use hysteresis to avoid chattering
-          if (std::abs(normalized_dial) < kWristPitchBrakeOnThreshold) {
-            Stop(out_somanet_, true, joint_idx);
-            hand_guided_pitch_brake_state_ = true;
-          } else if (hand_guided_pitch_brake_state_ &&
-                     std::abs(normalized_dial) > kWristPitchBrakeOffThreshold) {
-            if (!mode_switch) {
-              out_somanet_[joint_idx]->Controlword = kNormalOpBrakesOff;
-            }
-            hand_guided_pitch_brake_state_ = false;
-            SetVelocityWithLimits(
-                joint_idx, in_somanet_[joint_idx], has_position_limits_,
-                min_position_limits_, max_position_limits_,
-                position_reductions_[joint_idx].load(),
-                encoder_resolutions_[joint_idx].load(), velocity,
-                si_velocity_units_[joint_idx].load(), out_somanet_[joint_idx]);
-          } else {
-            SetVelocityWithLimits(
-                joint_idx, in_somanet_[joint_idx], has_position_limits_,
-                min_position_limits_, max_position_limits_,
-                position_reductions_[joint_idx].load(),
-                encoder_resolutions_[joint_idx].load(), velocity,
-                si_velocity_units_[joint_idx].load(), out_somanet_[joint_idx]);
-          }
+          SetVelocityWithLimits(
+              joint_idx, in_somanet_[joint_idx], has_position_limits_,
+              min_position_limits_, max_position_limits_,
+              position_reductions_[joint_idx].load(),
+              encoder_resolutions_[joint_idx].load(), velocity,
+              si_velocity_units_[joint_idx].load(), out_somanet_[joint_idx]);
         }
       }
       // Wrist roll (dial controlled; matches synapticon HAND_GUIDED)

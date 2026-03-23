@@ -67,9 +67,14 @@ inline void HandleSwitchOn(std::array<OutSomanet50t*, kNumJoints>& out_somanet,
 
 inline void HandleEnableOperation(
     std::array<OutSomanet50t*, kNumJoints>& out_somanet,
-    std::size_t joint_idx, bool mode_switch_in_progress) {
+    std::size_t joint_idx, bool mode_switch_in_progress,
+    ControlLevel control_level, bool deadman_pressed) {
   if (!mode_switch_in_progress) {
-    out_somanet[joint_idx]->Controlword = kNormalOpBrakesOff;
+    if (control_level == ControlLevel::kHandGuided && !deadman_pressed) {
+      out_somanet[joint_idx]->Controlword = 0b00000111;
+    } else {
+      out_somanet[joint_idx]->Controlword = kNormalOpBrakesOff;
+    }
   }
 }
 
