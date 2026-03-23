@@ -1,8 +1,9 @@
 #include <gtest/gtest.h>
+#include <array>
 #include <memory>
-#include <vector>
 
 #include "elevated_control/state_machine.hpp"
+#include "elevated_control/types.hpp"
 
 using namespace elevated_control;
 
@@ -11,7 +12,7 @@ namespace {
 class StopFunctionTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    for (int i = 0; i < 10; ++i) {
+    for (std::size_t i = 0; i < kNumJoints; ++i) {
       auto out_somanet = std::make_unique<OutSomanet50t>();
       out_somanet->OpMode = kOriginalOpMode;
       out_somanet->TargetVelocity = 100;
@@ -20,15 +21,15 @@ class StopFunctionTest : public ::testing::Test {
       out_somanet->TorqueOffset = 75;
       out_somanet->Controlword = 0x1234;
 
-      out_somanet_ptrs_.push_back(out_somanet.get());
-      out_somanet_objects_.push_back(std::move(out_somanet));
+      out_somanet_ptrs_[i] = out_somanet.get();
+      out_somanet_objects_[i] = std::move(out_somanet);
     }
   }
 
   static constexpr std::int8_t kOriginalOpMode = 1;
 
-  std::vector<OutSomanet50t*> out_somanet_ptrs_;
-  std::vector<std::unique_ptr<OutSomanet50t>> out_somanet_objects_;
+  JointArray<OutSomanet50t*> out_somanet_ptrs_{};
+  std::array<std::unique_ptr<OutSomanet50t>, kNumJoints> out_somanet_objects_{};
 };
 
 TEST_F(StopFunctionTest, GeneralJointWithoutBrake) {
@@ -64,26 +65,26 @@ TEST_F(StopFunctionTest, OtherJointsUnaffected) {
   const int target_joint_idx = 2;
   const bool apply_brake = false;
 
-  std::vector<int8_t> original_op_modes;
-  std::vector<int32_t> original_target_velocities;
-  std::vector<int32_t> original_velocity_offsets;
-  std::vector<int16_t> original_target_torques;
-  std::vector<int16_t> original_torque_offsets;
-  std::vector<uint16_t> original_controlwords;
+  std::array<std::int8_t, kNumJoints> original_op_modes{};
+  std::array<std::int32_t, kNumJoints> original_target_velocities{};
+  std::array<std::int32_t, kNumJoints> original_velocity_offsets{};
+  std::array<std::int16_t, kNumJoints> original_target_torques{};
+  std::array<std::int16_t, kNumJoints> original_torque_offsets{};
+  std::array<std::uint16_t, kNumJoints> original_controlwords{};
 
-  for (size_t i = 0; i < out_somanet_ptrs_.size(); ++i) {
-    original_op_modes.push_back(out_somanet_ptrs_[i]->OpMode);
-    original_target_velocities.push_back(out_somanet_ptrs_[i]->TargetVelocity);
-    original_velocity_offsets.push_back(out_somanet_ptrs_[i]->VelocityOffset);
-    original_target_torques.push_back(out_somanet_ptrs_[i]->TargetTorque);
-    original_torque_offsets.push_back(out_somanet_ptrs_[i]->TorqueOffset);
-    original_controlwords.push_back(out_somanet_ptrs_[i]->Controlword);
+  for (std::size_t i = 0; i < kNumJoints; ++i) {
+    original_op_modes[i] = out_somanet_ptrs_[i]->OpMode;
+    original_target_velocities[i] = out_somanet_ptrs_[i]->TargetVelocity;
+    original_velocity_offsets[i] = out_somanet_ptrs_[i]->VelocityOffset;
+    original_target_torques[i] = out_somanet_ptrs_[i]->TargetTorque;
+    original_torque_offsets[i] = out_somanet_ptrs_[i]->TorqueOffset;
+    original_controlwords[i] = out_somanet_ptrs_[i]->Controlword;
   }
 
   Stop(out_somanet_ptrs_, apply_brake, target_joint_idx);
 
-  for (size_t i = 0; i < out_somanet_ptrs_.size(); ++i) {
-    if (i != static_cast<size_t>(target_joint_idx)) {
+  for (std::size_t i = 0; i < kNumJoints; ++i) {
+    if (i != static_cast<std::size_t>(target_joint_idx)) {
       EXPECT_EQ(out_somanet_ptrs_[i]->OpMode, original_op_modes[i]);
       EXPECT_EQ(out_somanet_ptrs_[i]->TargetVelocity,
                 original_target_velocities[i]);

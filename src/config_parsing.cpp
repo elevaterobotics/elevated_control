@@ -10,9 +10,7 @@
 
 namespace elevated_control {
 
-JointLimitsConfig ParseJointLimits(
-    const std::string& joint_limits_file,
-    const std::vector<std::string>& joint_names) {
+JointLimitsConfig ParseJointLimits(const std::string& joint_limits_file) {
   JointLimitsConfig config;
 
   try {
@@ -24,14 +22,12 @@ JointLimitsConfig ParseJointLimits(
 
     YAML::Node joint_limits = yaml_config["joint_limits"];
 
-    config.has_position_limits.resize(joint_names.size(), false);
-    config.min_position_limits.resize(
-        joint_names.size(), -std::numeric_limits<float>::max());
-    config.max_position_limits.resize(
-        joint_names.size(), std::numeric_limits<float>::max());
+    config.has_position_limits.fill(false);
+    config.min_position_limits.fill(-std::numeric_limits<float>::max());
+    config.max_position_limits.fill(std::numeric_limits<float>::max());
 
-    for (std::size_t i = 0; i < joint_names.size(); ++i) {
-      const std::string& joint_name = joint_names[i];
+    for (std::size_t i = 0; i < kNumJoints; ++i) {
+      const std::string joint_name(kJointNames[i]);
 
       if (joint_limits[joint_name]) {
         YAML::Node joint_config = joint_limits[joint_name];
@@ -78,6 +74,7 @@ JointLimitsConfig ParseJointLimits(
     return JointLimitsConfig{};
   }
 
+  config.valid = true;
   return config;
 }
 
@@ -233,8 +230,8 @@ ElevateConfig ParseElevateConfig(const std::string& elevate_config_file) {
 }
 
 bool ValidateJointLimits(const JointLimitsConfig& config) {
-  if (config.has_position_limits.empty()) {
-    spdlog::error("Joint limits configuration is empty");
+  if (!config.valid) {
+    spdlog::error("Joint limits configuration is invalid or empty");
     return false;
   }
   return true;
