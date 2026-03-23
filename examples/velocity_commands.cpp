@@ -44,11 +44,15 @@ int main() {
 
   // Output-shaft rad/s; wrist roll joint only, small rate. Re-issue before 200 ms
   // timeout in the control loop so velocity is held for the full window.
-  // spring_adjust_joint (index 2) must be NaN — use SetSpringSetpoint for load.
   elevated_control::JointFloatArray velocities{};
-  velocities[static_cast<std::size_t>(elevated_control::JointName::kSpringAdjust)] =
+  // spring_adjust_joint (index 2) must be NaN for SetVelocityCommand()
+  // Use SetSpringSetpoint to adjust the spring load.
+  velocities[elevated_control::JointIndex(
+      elevated_control::JointName::kSpringAdjust)] =
       std::numeric_limits<float>::quiet_NaN();
-  velocities[6] = 0.02f;
+  // Wrist roll command
+  velocities[elevated_control::JointIndex(
+      elevated_control::JointName::kWristRoll)] = 0.02f;
 
   const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(5);
   while (std::chrono::steady_clock::now() < end) {

@@ -567,6 +567,7 @@ std::expected<void, Error> ArmInterface::SetPositionCommand(
     }
   }
   if (need_switch) {
+    // Position control for all joints except spring adjust
     auto result = SwitchControlMode(MakeStreamingModes(ControlLevel::kPosition));
     if (!result) return result;
   }
@@ -614,6 +615,7 @@ std::expected<void, Error> ArmInterface::SetVelocityCommand(
     }
   }
   if (need_switch) {
+    // Velocity control for all joints except spring adjust
     auto result = SwitchControlMode(MakeStreamingModes(ControlLevel::kVelocity));
     if (!result) return result;
   }
@@ -669,6 +671,7 @@ std::expected<void, Error> ArmInterface::SetTorqueCommand(
     }
   }
   if (need_switch) {
+    // Torque control for all joints except spring adjust
     auto result = SwitchControlMode(MakeStreamingModes(ControlLevel::kTorque));
     if (!result) return result;
   }
@@ -744,7 +747,7 @@ std::expected<void, Error> ArmInterface::SendCommand(
   }
 
   for (std::size_t j = 0; j < joints.size(); ++j) {
-    auto i = static_cast<std::size_t>(joints[j]);
+    auto i = JointIndex(joints[j]);
     if (i >= kNumJoints) {
       return std::unexpected(
           Error{ErrorCode::kInvalidArgument, "Invalid joint index"});
