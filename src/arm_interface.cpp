@@ -1414,19 +1414,24 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
         }
 
         float velocity = 0.0f;
-        const float v_max = kMaxWristPitchVelocity;
-        const float slope = v_max / (1.0f - kWristPitchDeadband);
-        if (normalized_dial > 1.0f) {
-          velocity = v_max;
-        } else if (normalized_dial >= kWristPitchDeadband &&
-                   normalized_dial <= 1.0f) {
-          velocity = slope * (normalized_dial - kWristPitchDeadband);
-        } else if (normalized_dial < -1.0f) {
-          velocity = -v_max;
-        } else if (normalized_dial <= -kWristPitchDeadband &&
-                   normalized_dial >= -1.0f) {
-          velocity = slope * (normalized_dial - (-1.0f)) - v_max;
+        {
+          // TODO: revert when dials are operational
+          // const float v_max = kMaxWristPitchVelocity;
+          // const float slope = v_max / (1.0f - kWristPitchDeadband);
+          // if (normalized_dial > 1.0f) {
+          //   velocity = v_max;
+          // } else if (normalized_dial >= kWristPitchDeadband &&
+          //            normalized_dial <= 1.0f) {
+          //   velocity = slope * (normalized_dial - kWristPitchDeadband);
+          // } else if (normalized_dial < -1.0f) {
+          //   velocity = -v_max;
+          // } else if (normalized_dial <= -kWristPitchDeadband &&
+          //            normalized_dial >= -1.0f) {
+          //   velocity = slope * (normalized_dial - (-1.0f)) - v_max;
+          // }
+          normalized_dial = 0.0f;
         }
+
         velocity = wrist_pitch_dial_filter_.Filter(velocity);
 
         // Put the brakes on to save some actuator effort, if the dial isn't being used
