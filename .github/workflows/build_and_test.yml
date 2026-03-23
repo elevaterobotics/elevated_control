@@ -15,6 +15,13 @@ jobs:
     runs-on: ubuntu-latest
     container: ${{ matrix.os }}
     steps:
+      # Minimal Ubuntu images have no Git; checkout falls back to the GitHub API and cannot
+      # fetch submodules. Install Git before checkout so clone + submodule init works.
+      - name: Install Git
+        run: |
+          apt-get update -y -qq
+          apt-get install -y -qq git
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
