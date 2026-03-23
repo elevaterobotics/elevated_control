@@ -1394,17 +1394,17 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
         }
 
         float velocity = 0.0f;
-        float v_max = kMaxWristPitchVelocity;
-        float slope = v_max / (1.0f - kWristPitchDeadband);
-        if (normalized_dial > 1.0f) {
-          velocity = v_max;
-        } else if (normalized_dial >= kWristPitchDeadband) {
-          velocity = slope * (normalized_dial - kWristPitchDeadband);
-        } else if (normalized_dial < -1.0f) {
-          velocity = -v_max;
-        } else if (normalized_dial <= -kWristPitchDeadband) {
-          velocity = slope * (normalized_dial + 1.0f) - v_max;
-        }
+        // float v_max = kMaxWristPitchVelocity;
+        // float slope = v_max / (1.0f - kWristPitchDeadband);
+        // if (normalized_dial > 1.0f) {
+        //   velocity = v_max;
+        // } else if (normalized_dial >= kWristPitchDeadband) {
+        //   velocity = slope * (normalized_dial - kWristPitchDeadband);
+        // } else if (normalized_dial < -1.0f) {
+        //   velocity = -v_max;
+        // } else if (normalized_dial <= -kWristPitchDeadband) {
+        //   velocity = slope * (normalized_dial + 1.0f) - v_max;
+        // }
         velocity = wrist_pitch_dial_filter_.Filter(velocity);
 
         if (hand_guided_pitch_brake_state_ &&
