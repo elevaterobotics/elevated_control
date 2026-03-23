@@ -4,6 +4,12 @@ Pure C++ control interface for Elevate Robotics 7-DOF manipulators. Communicates
 with Synapticon drives over EtherCAT (via the bundled SOEM library) and exposes a
 simple `ArmInterface` class.
 
+## Cloning
+
+When cloning, add the `--recursive` flag to get the submodules as well:
+
+`git clone --recursive https://github.com/elevaterobotics/elevated_control.git`
+
 ## Dependencies
 
 Tested on Ubuntu 24.04:

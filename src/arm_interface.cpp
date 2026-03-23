@@ -4,7 +4,7 @@
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
-#include "ethercat.h"
+#include <soem/ethercat.h>
 #pragma GCC diagnostic pop
 
 #include <algorithm>
@@ -475,7 +475,7 @@ std::expected<void, Error> ArmInterface::SwitchControlModeImpl(
       }
 
       // Set commutation offset state bit to Valid for torque control
-      const std::int16_t valid_offset_state = 2;
+      std::int16_t valid_offset_state = 2;
       int result;
       {
         std::lock_guard<std::mutex> lock(hw_state_mtx_);

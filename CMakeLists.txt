@@ -8,36 +8,15 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-add_compile_options(-Wall -Wextra -Wpedantic)
+add_compile_options(-Wall -Wextra)
+# SOEM is C and uses -Werror; -Wpedantic on C breaks the submodule build. Apply to C++ only.
+add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Wpedantic>)
 
 # ---------- SOEM static library ----------
-set(OS "linux")
-set(OS_LIBS pthread rt)
-file(GLOB OSAL_HEADERS
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/osal/osal.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/osal/${OS}/*.h)
-file(GLOB OSAL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/osal/${OS}/*.c)
-file(GLOB OSHW_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/src/oshw/${OS}/*.h)
-file(GLOB OSHW_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/oshw/${OS}/*.c)
-file(GLOB SOEM_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/src/soem/*.h)
-file(GLOB SOEM_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/soem/*.c)
-
-add_library(elevated_soem STATIC
-  ${SOEM_SOURCES}
-  ${OSAL_SOURCES}
-  ${OSHW_SOURCES}
-)
-set_property(TARGET elevated_soem PROPERTY POSITION_INDEPENDENT_CODE ON)
-target_link_libraries(elevated_soem ${OS_LIBS})
-target_include_directories(elevated_soem PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osal>
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osal/${OS}>
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/oshw/${OS}>
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/soem>
-)
+add_subdirectory(external/SOEM)
+set_target_properties(soem PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # ---------- Main library ----------
-add_compile_options(-Wpedantic)
 
 find_package(spdlog REQUIRED)
 find_package(yaml-cpp REQUIRED)
@@ -53,10 +32,16 @@ target_include_directories(${PROJECT_NAME}
   PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
+  PRIVATE
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/external/SOEM>
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/external/SOEM/soem>
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/external/SOEM/osal>
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/external/SOEM/osal/linux>
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/external/SOEM/oshw/linux>
 )
 target_link_libraries(${PROJECT_NAME}
   PUBLIC spdlog::spdlog
-  PRIVATE elevated_soem yaml-cpp pthread rt
+  PRIVATE soem yaml-cpp pthread rt
 )
 
 # ---------- Examples ----------
@@ -79,12 +64,6 @@ install(
 install(
   TARGETS ${PROJECT_NAME}
   EXPORT ${PROJECT_NAME}Targets
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
-install(
-  TARGETS elevated_soem
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
