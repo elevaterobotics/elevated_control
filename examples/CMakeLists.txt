@@ -8,11 +8,16 @@ target_link_libraries(velocity_commands PRIVATE ${PROJECT_NAME})
 target_include_directories(velocity_commands PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR})
 
+add_executable(hand_guided hand_guided.cpp)
+target_link_libraries(hand_guided PRIVATE ${PROJECT_NAME})
+target_include_directories(hand_guided PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR})
+
 set(EXAMPLE_CONFIG_YAMLS
   ${CMAKE_CURRENT_SOURCE_DIR}/joint_limits.yaml
   ${CMAKE_CURRENT_SOURCE_DIR}/elevate_config.yaml
 )
-foreach(exe basic_usage velocity_commands)
+foreach(exe basic_usage velocity_commands hand_guided)
   foreach(yaml ${EXAMPLE_CONFIG_YAMLS})
     add_custom_command(
       TARGET ${exe} POST_BUILD
@@ -25,7 +30,7 @@ foreach(exe basic_usage velocity_commands)
 endforeach()
 
 install(
-	TARGETS basic_usage velocity_commands
+	TARGETS basic_usage velocity_commands hand_guided
 	RUNTIME DESTINATION examples
 )
 
