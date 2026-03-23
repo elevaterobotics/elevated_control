@@ -10,7 +10,7 @@ Tested on Ubuntu 24.04:
 
 | Dependency | Purpose |
 |---|---|
-| **GCC 13+** (or any C++23 compiler) | `std::expected`, `std::jthread` |
+| **GCC 12+** (or any C++23 compiler) | `std::expected`, `std::jthread` |
 | **spdlog** | Logging (`libspdlog-dev`) |
 | **yaml-cpp** | Config file parsing (`libyaml-cpp-dev`) |
 | **pthread / rt** | Real-time threading (provided by glibc) |
