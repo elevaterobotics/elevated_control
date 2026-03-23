@@ -71,6 +71,7 @@ class ArmInterface {
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
+    spdlog::warn("Control loop is ready");
     return true;
   }
 
