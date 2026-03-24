@@ -152,6 +152,9 @@ class ArmInterface {
   void ApplyWristPitchHoldTorque(const InSomanet50t* in_somanet,
                                  OutSomanet50t* out_somanet);
 
+  // Refresh whether hand-guided wrist pitch should remain latched in shutdown.
+  void RefreshHandGuidedPitchBrakeHold();
+
   void ApplyFrictionCompensation(std::size_t joint_idx);
 
   float CalculateUserTorque(const InSomanet50t* in_somanet,
@@ -229,6 +232,7 @@ class ArmInterface {
 
   // Per-joint control modes
   JointControlLevelArray control_level_{};
+  JointArray<std::atomic<bool>> hold_in_shutdown_{};
   mutable std::mutex hw_state_mtx_;
 
   // State readout (updated from control loop under mutex)
@@ -268,9 +272,6 @@ class ArmInterface {
   VelocityFilter yaw1_collision_torque_filter_{0.7f};
   VelocityFilter yaw2_collision_torque_filter_{0.7f};
   VelocityFilter wrist_yaw_collision_torque_filter_{0.7f};
-
-  // Hand-guided wrist pitch brake hysteresis
-  std::atomic<bool> hand_guided_pitch_brake_state_{false};
 };
 
 }  // namespace elevated_control
