@@ -1347,6 +1347,7 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
   if (control_level_[joint_idx] == ControlLevel::kHandGuided) {
     if (!deadman_pressed) {
       if (!mode_switch) {
+        // Mode switch in progress: it will already stop the joint
         Stop(out_somanet_, true, joint_idx);
       }
       return;

@@ -71,6 +71,7 @@ inline void HandleEnableOperation(
     ControlLevel control_level, bool deadman_pressed) {
   if (!mode_switch_in_progress) {
     if (control_level == ControlLevel::kHandGuided && !deadman_pressed) {
+      // Operation not enabled yet
       out_somanet[joint_idx]->Controlword = 0b00000111;
     } else {
       out_somanet[joint_idx]->Controlword = kNormalOpBrakesOff;
