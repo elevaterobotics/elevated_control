@@ -60,12 +60,14 @@ inline constexpr unsigned int kCyclicLoopSleepUs = 5000;
 inline constexpr int kMinPdoExchanges = 200;
 
 // Deadband for wrist pitch dial
-inline constexpr float kWristPitchDeadband = 0.2f;
+inline constexpr float kWristPitchDeadband = 0.05f;
 inline constexpr float kWristRollDeadband = 0.1f;
-inline constexpr float kWristPitchBrakeOffThreshold = 0.05f;
+// Brake hysteresis for hand-guided pitch
+inline constexpr float kWristPitchBrakeOnThreshold = 0.01f;
+inline constexpr float kWristPitchBrakeOffThreshold = 0.02f;
 
 // Max wrist velocity from hand-guided dial (rad/s)
-inline constexpr float kMaxWristPitchVelocity = 0.6f;
+inline constexpr float kMaxWristPitchVelocity = 0.3f;
 inline constexpr float kMaxWristRollVelocity = 0.6f;
 
 // Admittance velocity scaling (matches synapticon ADMITTANCE_VELOCITY_MULTIPLIER)

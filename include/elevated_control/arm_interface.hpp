@@ -140,7 +140,8 @@ class ArmInterface {
   // Per-joint Somanet state machine step
   void StateMachineStep(std::size_t joint_idx,
                         std::int32_t lips_spring_position,
-                        bool admittance_button_pressed);
+                        bool admittance_button_pressed,
+                        bool deadman_pressed);
 
   void StatusWordErrorLogging(std::size_t joint_idx);
 
