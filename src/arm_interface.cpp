@@ -926,7 +926,6 @@ bool ArmInterface::EStopEngaged() {
   if (wkc_ < expected_wkc_) {
     if (pdo_exchange_count_.load() < kMinPdoExchanges) {
       // It's expected to have some pdo exchange failures on startup
-      spdlog::warn("Returning true from EStopEngaged because of pdo exchange failure");
       return true;
     }
     static auto last_process_data_warn =
@@ -936,7 +935,6 @@ bool ArmInterface::EStopEngaged() {
       spdlog::warn("Process data communication failed");
       last_process_data_warn = now;
     }
-    spdlog::warn("Returning true from EStopEngaged because of process data timeout");
     return true;
   }
 
@@ -949,7 +947,6 @@ bool ArmInterface::EStopEngaged() {
     spdlog::error("Failed to read e-stop status");
     return true;
   }
-  spdlog::error("Estop value read from SDO in EStopEngaged {}", value_holder);
   return value_holder;
 }
 
@@ -1149,7 +1146,6 @@ void ArmInterface::ControlLoop(std::stop_token stop_token) {
   first_iteration.fill(true);
 
   while (!stop_token.stop_requested() && !dynamic_sim_exited_) {
-    spdlog::warn("require_new_command_mode_ in ControlLoop: {}", require_new_command_mode_);
     const bool estop = EStopEngaged();
     if (estop) {
       require_new_command_mode_ = true;
@@ -1228,7 +1224,6 @@ void ArmInterface::ControlLoop(std::stop_token stop_token) {
 
       const bool deadman_pressed = hw_function_enable_.load() > 0.5f;
       static bool prev_deadman_pressed = false;
-      spdlog::warn("deadman_pressed in ControlLoop: {}", deadman_pressed);
 
       // Check if deadman pressed initially (stuck button safety)
       if (first_iteration[0] && deadman_pressed) {
@@ -1352,8 +1347,6 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
       }
       return;
     }
-
-    spdlog::warn("deadman_pressed in StateMachineStep: {}", deadman_pressed);
 
     if ((joint_idx != kSpringAdjustIdx) &&
         (joint_idx != kElevationInertialIdx)) {
