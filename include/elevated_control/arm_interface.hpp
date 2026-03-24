@@ -152,6 +152,7 @@ class ArmInterface {
   void ApplyWristPitchHoldTorque(const InSomanet50t* in_somanet,
                                  OutSomanet50t* out_somanet);
 
+  // Refresh whether hand-guided wrist pitch should remain latched in shutdown.
   void RefreshHandGuidedPitchBrakeHold();
 
   void ApplyFrictionCompensation(std::size_t joint_idx);

@@ -991,6 +991,7 @@ void ArmInterface::ApplyWristPitchHoldTorque(const InSomanet50t* in_somanet,
   out_somanet->TorqueOffset = static_cast<std::int16_t>(cosine_term + drake_ff);
 }
 
+// Refresh whether hand-guided wrist pitch should remain latched in shutdown.
 void ArmInterface::RefreshHandGuidedPitchBrakeHold() {
   std::optional<std::int32_t> wrist_pitch_dial_value =
       ReadSDOValue(static_cast<std::uint16_t>(kWristRollIdx + 1), 0x2402, 0x00);
@@ -1337,6 +1338,7 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
   if (joint_idx == kWristPitchIdx &&
       control_level_[joint_idx] == ControlLevel::kHandGuided &&
       hold_in_shutdown_[joint_idx].load()) {
+    // Check if we should allow the wrist pitch state machine to transition and the brake can come off
     RefreshHandGuidedPitchBrakeHold();
   }
   const bool hold_in_shutdown = hold_in_shutdown_[joint_idx].load();

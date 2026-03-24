@@ -58,6 +58,7 @@ inline void HandleShutdown(std::array<OutSomanet50t*, kNumJoints>& out_somanet,
       (control_level[joint_idx] != ControlLevel::kQuickStop) &&
       (control_level[joint_idx] != ControlLevel::kUndefined) &&
       !mode_switch_in_progress) {
+    // Request the CiA402 "shutdown" transition toward "Ready to switch on".
     out_somanet[joint_idx]->Controlword = 0b00000110;
   }
 }
@@ -69,6 +70,7 @@ inline void HandleSwitchOn(std::array<OutSomanet50t*, kNumJoints>& out_somanet,
     Stop(out_somanet, true, joint_idx);
     return;
   }
+  // Request the CiA402 "switch on" transition toward "Switched on".
   out_somanet[joint_idx]->Controlword = 0b00000111;
 }
 
