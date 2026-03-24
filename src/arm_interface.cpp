@@ -496,6 +496,7 @@ std::expected<void, Error> ArmInterface::SwitchControlModeImpl(
     last_velocity_write_time_ns_[i].store(0, std::memory_order_relaxed);
     threadsafe_commands_efforts_[i] =
         std::numeric_limits<float>::quiet_NaN();
+    hold_in_shutdown_[i] = false;
   }
 
   // Handle spring adjust mode
@@ -990,6 +991,47 @@ void ArmInterface::ApplyWristPitchHoldTorque(const InSomanet50t* in_somanet,
   out_somanet->TorqueOffset = static_cast<std::int16_t>(cosine_term + drake_ff);
 }
 
+void ArmInterface::RefreshHandGuidedPitchBrakeHold() {
+  std::optional<std::int32_t> wrist_pitch_dial_value =
+      ReadSDOValue(static_cast<std::uint16_t>(kWristRollIdx + 1), 0x2402, 0x00);
+  if (!wrist_pitch_dial_value) {
+    spdlog::error("ReadSDOValue() failed for pitch dial");
+    hold_in_shutdown_[kWristPitchIdx] = true;
+    hand_guided_pitch_brake_state_ = true;
+    wrist_pitch_dial_filter_.Reset();
+    return;
+  }
+
+  *wrist_pitch_dial_value = std::clamp(
+      *wrist_pitch_dial_value, elevate_config_.button_config.pitch_dial.min,
+      elevate_config_.button_config.pitch_dial.max);
+  float normalized_dial =
+      -static_cast<float>(
+          *wrist_pitch_dial_value - elevate_config_.button_config.pitch_dial.center) /
+      (0.5f * (elevate_config_.button_config.pitch_dial.max -
+               elevate_config_.button_config.pitch_dial.min));
+
+  if (std::abs(normalized_dial) < kWristPitchDeadband) {
+    normalized_dial = 0.0f;
+  }
+
+  {
+    // TODO: revert when dials are operational
+    normalized_dial = 0.0f;
+  }
+
+  if (std::abs(normalized_dial) < kWristPitchBrakeOnThreshold) {
+    hold_in_shutdown_[kWristPitchIdx] = true;
+    hand_guided_pitch_brake_state_ = true;
+  } else if (hand_guided_pitch_brake_state_.load() &&
+             std::abs(normalized_dial) > kWristPitchBrakeOffThreshold) {
+    hold_in_shutdown_[kWristPitchIdx] = false;
+    hand_guided_pitch_brake_state_ = false;
+  } else if (!hand_guided_pitch_brake_state_.load()) {
+    hold_in_shutdown_[kWristPitchIdx] = false;
+  }
+}
+
 void ArmInterface::ApplyFrictionCompensation(std::size_t joint_idx) {
   float joint_velocity_rad_s = VelocityValueToOutputShaftRadPerS(
       in_somanet_[joint_idx]->VelocityValue,
@@ -1292,6 +1334,12 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
                                     bool admittance_button_pressed,
                                     bool deadman_pressed) {
   const auto statusword = in_somanet_[joint_idx]->Statusword;
+  if (joint_idx == kWristPitchIdx &&
+      control_level_[joint_idx] == ControlLevel::kHandGuided &&
+      hold_in_shutdown_[joint_idx].load()) {
+    RefreshHandGuidedPitchBrakeHold();
+  }
+  const bool hold_in_shutdown = hold_in_shutdown_[joint_idx].load();
 
   // Fault
   if ((statusword & 0x004F) == 0x0008) {
@@ -1301,18 +1349,19 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
   // Switch on disabled
   if ((statusword & 0x004F) == 0x0040) {
     HandleShutdown(out_somanet_, joint_idx, control_level_,
-                   mode_switch_in_progress_);
+                   mode_switch_in_progress_, hold_in_shutdown);
     return;
   }
   // Ready to switch on
   if ((statusword & 0x006F) == 0x0021) {
-    HandleSwitchOn(out_somanet_, joint_idx);
+    HandleSwitchOn(out_somanet_, joint_idx, hold_in_shutdown);
     return;
   }
   // Switched on
   if ((statusword & 0x006F) == 0x0023) {
     HandleEnableOperation(out_somanet_, joint_idx, mode_switch_in_progress_,
-                          control_level_[joint_idx], deadman_pressed);
+                          control_level_[joint_idx], deadman_pressed,
+                          hold_in_shutdown);
     return;
   }
   // Quick stop active
@@ -1382,11 +1431,16 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
       }
       // Wrist pitch (dial controlled)
       else if (joint_idx == kWristPitchIdx) {
+        if (hold_in_shutdown_[joint_idx].load()) {
+          Stop(out_somanet_, true, joint_idx);
+          return;
+        }
         std::optional<std::int32_t> wrist_pitch_dial_value = ReadSDOValue(
             static_cast<std::uint16_t>(kWristRollIdx + 1), 0x2402, 0x00);
         if (!wrist_pitch_dial_value) {
           spdlog::error("ReadSDOValue() failed for pitch dial");
           Stop(out_somanet_, true, joint_idx);
+          hold_in_shutdown_[joint_idx] = true;
           hand_guided_pitch_brake_state_ = true;
           wrist_pitch_dial_filter_.Reset();
           return;
@@ -1431,10 +1485,12 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
         // Put the brakes on to save some actuator effort, if the dial isn't being used
         // Use hysteresis to avoid chattering
         if (std::abs(normalized_dial) < kWristPitchBrakeOnThreshold) {
+          hold_in_shutdown_[joint_idx] = true;
           Stop(out_somanet_, true, joint_idx);
           hand_guided_pitch_brake_state_ = true;
         } else if (hand_guided_pitch_brake_state_ &&
                    std::abs(normalized_dial) > kWristPitchBrakeOffThreshold) {
+          hold_in_shutdown_[joint_idx] = false;
           if (!mode_switch) {
             out_somanet_[joint_idx]->Controlword = kNormalOpBrakesOff;
           }
@@ -1446,6 +1502,7 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
               encoder_resolutions_[joint_idx].load(), velocity,
               si_velocity_units_[joint_idx].load(), out_somanet_[joint_idx]);
         } else {
+          hold_in_shutdown_[joint_idx] = false;
           SetVelocityWithLimits(
               joint_idx, in_somanet_[joint_idx], has_position_limits_,
               min_position_limits_, max_position_limits_,

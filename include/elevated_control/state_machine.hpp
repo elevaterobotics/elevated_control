@@ -50,10 +50,12 @@ inline void HandleFault(const InSomanet50t* in_somanet,
 inline void HandleShutdown(std::array<OutSomanet50t*, kNumJoints>& out_somanet,
                            std::size_t joint_idx,
                            const JointControlLevelArray& control_level,
-                           bool mode_switch_in_progress) {
+                           bool mode_switch_in_progress,
+                           bool hold_in_shutdown) {
   Stop(out_somanet, true, joint_idx);
 
-  if ((control_level[joint_idx] != ControlLevel::kQuickStop) &&
+  if (!hold_in_shutdown &&
+      (control_level[joint_idx] != ControlLevel::kQuickStop) &&
       (control_level[joint_idx] != ControlLevel::kUndefined) &&
       !mode_switch_in_progress) {
     out_somanet[joint_idx]->Controlword = 0b00000110;
@@ -61,14 +63,23 @@ inline void HandleShutdown(std::array<OutSomanet50t*, kNumJoints>& out_somanet,
 }
 
 inline void HandleSwitchOn(std::array<OutSomanet50t*, kNumJoints>& out_somanet,
-                           std::size_t joint_idx) {
+                           std::size_t joint_idx,
+                           bool hold_in_shutdown) {
+  if (hold_in_shutdown) {
+    Stop(out_somanet, true, joint_idx);
+    return;
+  }
   out_somanet[joint_idx]->Controlword = 0b00000111;
 }
 
 inline void HandleEnableOperation(
     std::array<OutSomanet50t*, kNumJoints>& out_somanet,
     std::size_t joint_idx, bool mode_switch_in_progress,
-    ControlLevel control_level, bool deadman_pressed) {
+    ControlLevel control_level, bool deadman_pressed, bool hold_in_shutdown) {
+  if (hold_in_shutdown) {
+    Stop(out_somanet, true, joint_idx);
+    return;
+  }
   if (!mode_switch_in_progress) {
     if (control_level == ControlLevel::kHandGuided && !deadman_pressed) {
       // Operation not enabled yet

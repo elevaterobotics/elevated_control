@@ -152,6 +152,8 @@ class ArmInterface {
   void ApplyWristPitchHoldTorque(const InSomanet50t* in_somanet,
                                  OutSomanet50t* out_somanet);
 
+  void RefreshHandGuidedPitchBrakeHold();
+
   void ApplyFrictionCompensation(std::size_t joint_idx);
 
   float CalculateUserTorque(const InSomanet50t* in_somanet,
@@ -229,6 +231,7 @@ class ArmInterface {
 
   // Per-joint control modes
   JointControlLevelArray control_level_{};
+  JointArray<std::atomic<bool>> hold_in_shutdown_{};
   mutable std::mutex hw_state_mtx_;
 
   // State readout (updated from control loop under mutex)
