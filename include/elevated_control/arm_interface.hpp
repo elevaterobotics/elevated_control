@@ -272,9 +272,6 @@ class ArmInterface {
   VelocityFilter yaw1_collision_torque_filter_{0.7f};
   VelocityFilter yaw2_collision_torque_filter_{0.7f};
   VelocityFilter wrist_yaw_collision_torque_filter_{0.7f};
-
-  // Hand-guided wrist pitch brake hysteresis
-  std::atomic<bool> hand_guided_pitch_brake_state_{false};
 };
 
 }  // namespace elevated_control

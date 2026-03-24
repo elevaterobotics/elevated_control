@@ -457,7 +457,6 @@ std::expected<void, Error> ArmInterface::SwitchControlModeImpl(
   for (std::size_t i = 0; i < kNumJoints; ++i) {
     if (new_modes[i] == ControlLevel::kHandGuided) {
       if (i == kWristPitchIdx) {
-        hand_guided_pitch_brake_state_ = true;
         wrist_pitch_dial_filter_.Reset();
       } else if (i == kYaw1Idx) {
         yaw1_torque_filter_.Reset();
@@ -998,7 +997,6 @@ void ArmInterface::RefreshHandGuidedPitchBrakeHold() {
   if (!wrist_pitch_dial_value) {
     spdlog::error("ReadSDOValue() failed for pitch dial");
     hold_in_shutdown_[kWristPitchIdx] = true;
-    hand_guided_pitch_brake_state_ = true;
     wrist_pitch_dial_filter_.Reset();
     return;
   }
@@ -1023,12 +1021,8 @@ void ArmInterface::RefreshHandGuidedPitchBrakeHold() {
 
   if (std::abs(normalized_dial) < kWristPitchBrakeOnThreshold) {
     hold_in_shutdown_[kWristPitchIdx] = true;
-    hand_guided_pitch_brake_state_ = true;
-  } else if (hand_guided_pitch_brake_state_.load() &&
+  } else if (hold_in_shutdown_[kWristPitchIdx].load() &&
              std::abs(normalized_dial) > kWristPitchBrakeOffThreshold) {
-    hold_in_shutdown_[kWristPitchIdx] = false;
-    hand_guided_pitch_brake_state_ = false;
-  } else if (!hand_guided_pitch_brake_state_.load()) {
     hold_in_shutdown_[kWristPitchIdx] = false;
   }
 }
@@ -1443,7 +1437,6 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
           spdlog::error("ReadSDOValue() failed for pitch dial");
           Stop(out_somanet_, true, joint_idx);
           hold_in_shutdown_[joint_idx] = true;
-          hand_guided_pitch_brake_state_ = true;
           wrist_pitch_dial_filter_.Reset();
           return;
         }
@@ -1487,16 +1480,15 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
         // Put the brakes on to save some actuator effort, if the dial isn't being used
         // Use hysteresis to avoid chattering
         if (std::abs(normalized_dial) < kWristPitchBrakeOnThreshold) {
+          // Latch future state-machine cycles in shutdown, then brake immediately this cycle
           hold_in_shutdown_[joint_idx] = true;
           Stop(out_somanet_, true, joint_idx);
-          hand_guided_pitch_brake_state_ = true;
-        } else if (hand_guided_pitch_brake_state_ &&
+        } else if (hold_in_shutdown_[joint_idx].load() &&
                    std::abs(normalized_dial) > kWristPitchBrakeOffThreshold) {
           hold_in_shutdown_[joint_idx] = false;
           if (!mode_switch) {
             out_somanet_[joint_idx]->Controlword = kNormalOpBrakesOff;
           }
-          hand_guided_pitch_brake_state_ = false;
           SetVelocityWithLimits(
               joint_idx, in_somanet_[joint_idx], has_position_limits_,
               min_position_limits_, max_position_limits_,
