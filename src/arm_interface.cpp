@@ -1712,22 +1712,24 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
     if (joint_idx == kSpringAdjustIdx) {
       if (!allow_mode_change_) {
         bool allow = allow_mode_change_.load();
-        float target = spring_setpoint_target_.has_value()
-            ? spring_setpoint_target_->load()
-            : static_cast<float>(
-                  elevate_config_.spring_setpoints.spring_setpoint_unloaded);
-        float actuator_torque =
-            SpringAdjustByLIPS(target, lips_spring_position, allow);
-        allow_mode_change_ = allow;
-
-        out_somanet_[joint_idx]->TargetTorque =
-            static_cast<std::int16_t>(actuator_torque);
-        out_somanet_[joint_idx]->OpMode = kProfileTorqueMode;
-        out_somanet_[joint_idx]->TorqueOffset = 0;
-        if (!mode_switch) {
-          out_somanet_[joint_idx]->Controlword = kNormalOpBrakesOff;
+        if (spring_setpoint_target_.has_value()) {
+          float target = spring_setpoint_target_->load();
+          float actuator_torque = SpringAdjustByLIPS(target, lips_spring_position, allow);
+          allow_mode_change_ = allow;
+          out_somanet_[joint_idx]->TargetTorque = static_cast<std::int16_t>(actuator_torque);
+          out_somanet_[joint_idx]->OpMode = kProfileTorqueMode;
+          out_somanet_[joint_idx]->TorqueOffset = 0;
+          if (!mode_switch) {
+            out_somanet_[joint_idx]->Controlword = kNormalOpBrakesOff;
+          }
+        }
+        // If we don't have a defined setpoint yet, just stop the joint
+        else {
+          spdlog::warn("A spring adjust setpoint wasn't defined for the spring adjust joint. Stopping.");
+          control_level_[joint_idx] = ControlLevel::kQuickStop;
         }
       } else {
+        spdlog::warn("A spring adjust setpoint wasn't defined for the spring adjust joint. Stopping.");
         control_level_[joint_idx] = ControlLevel::kQuickStop;
       }
     } else {
