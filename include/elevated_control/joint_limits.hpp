@@ -31,13 +31,39 @@ inline std::optional<std::pair<bool, float>> JointLimitCmdClamp(
   bool near_joint_limit = false;
 
   if (control_level == ControlLevel::kVelocity) {
+    // Velocity commands use output-shaft rad/s.
     if (current_position <
         min_position_limits[joint_idx] + kPositionLimitBuffer) {
-      output_command = std::max(requested_command, 0.0f);
+      if (requested_command > 0.0f) {
+        // A positive velocity is OK because it moves away from the limit
+        output_command = requested_command;
+      } else if (current_position < min_position_limits[joint_idx]) {
+        // Stop immediately if already past the limit
+        output_command = 0.0f;
+      } else {
+        // Linearly ramp the blocked velocity component down within the position limit buffer.
+        const float scale =
+            (current_position - min_position_limits[joint_idx]) /
+            kPositionLimitBuffer;
+        output_command = requested_command * std::clamp(scale, 0.0f, 1.0f);
+      }
       near_joint_limit = true;
     } else if (current_position >
                max_position_limits[joint_idx] - kPositionLimitBuffer) {
-      output_command = std::min(requested_command, 0.0f);
+      if (requested_command < 0.0f) {
+        // A negative velocity is OK because it moves away from the limit
+        output_command = requested_command;
+      } else if (current_position > max_position_limits[joint_idx]) {
+        // Stop immediately if already past the limit
+        output_command = 0.0f;
+      } else {
+        // Linearly ramp the blocked velocity component down within the position limit buffer.
+        const float scale =
+            (max_position_limits[joint_idx] - current_position) /
+            kPositionLimitBuffer;
+        output_command = requested_command * std::clamp(scale, 0.0f, 1.0f);
+      }
+      // else, don't change output_command
       near_joint_limit = true;
     }
   } else if (control_level == ControlLevel::kPosition) {
@@ -96,6 +122,7 @@ inline std::optional<std::pair<bool, float>> JointLimitCmdClamp(
   return std::make_pair(near_joint_limit, output_command);
 }
 
+// `requested_velocity` is output-shaft rad/s before conversion to drive units.
 inline void SetVelocityWithLimits(
     const std::size_t joint_idx, const InSomanet50t* in_somanet,
     const JointBoolArray& has_position_limits,
