@@ -258,7 +258,7 @@ class ArmInterface {
 
   // Spring adjust
   SpringAdjustState spring_adjust_state_;
-  std::atomic<float> spring_setpoint_target_{0.0f};
+  std::optional<std::atomic<float>> spring_setpoint_target_{};
 
   // Admittance
   JointArray<std::optional<JointAdmittance>> joint_admittances_{};

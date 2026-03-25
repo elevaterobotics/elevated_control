@@ -800,7 +800,7 @@ std::expected<void, Error> ArmInterface::SetSpringSetpoint(
   // payload_kg = 0.03 * ticks - 5.8  =>  ticks = (payload_kg + 5.8) / 0.03
   float payload_kg = load_in_newtons / 9.81f;
   float target_ticks = (payload_kg + 5.8f) / 0.03f;
-  spring_setpoint_target_ = target_ticks;
+  spring_setpoint_target_.emplace(target_ticks);
   return {};
 }
 
@@ -1712,11 +1712,10 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
     if (joint_idx == kSpringAdjustIdx) {
       if (!allow_mode_change_) {
         bool allow = allow_mode_change_.load();
-        float target = spring_setpoint_target_.load();
-        if (target == 0.0f) {
-          target = static_cast<float>(
-              elevate_config_.spring_setpoints.spring_setpoint_unloaded);
-        }
+        float target = spring_setpoint_target_.has_value()
+            ? spring_setpoint_target_->load()
+            : static_cast<float>(
+                  elevate_config_.spring_setpoints.spring_setpoint_unloaded);
         float actuator_torque =
             SpringAdjustByLIPS(target, lips_spring_position, allow);
         allow_mode_change_ = allow;
