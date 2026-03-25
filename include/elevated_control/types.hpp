@@ -69,6 +69,7 @@ enum class ErrorCode : std::uint8_t {
   kAlreadyInitialized,
   kEtherCATError,
   kInvalidArgument,
+  kInvalidSpringSetpoint,
   kInvalidMode,
   kModeChangeDenied,
   kJointLimitViolation,

@@ -109,6 +109,8 @@ class ArmInterface {
 
   // -- Spring --
 
+  // Convert load in Newtons to potentiometer ticks using a linear relationship
+  // Sets spring_setpoint_target_ in ticks
   std::expected<void, Error> SetSpringSetpoint(float load_in_newtons);
 
   // -- State queries --

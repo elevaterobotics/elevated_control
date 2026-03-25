@@ -77,5 +77,15 @@ TEST(CompleteSpringAdjustSession, ClearsSetpointAndSetsQuickStop) {
   EXPECT_EQ(level, ControlLevel::kQuickStop);
 }
 
+TEST(LoadNewtonsToSpringLipsTicks, ZeroNewtonsIsIntercept) {
+  EXPECT_FLOAT_EQ(LoadNewtonsToSpringLipsTicks(0.0f), 161.1f);
+}
+
+TEST(LoadNewtonsToSpringLipsTicks, MatchesLinearModel) {
+  // 3.7852 * 100 + 161.1
+  EXPECT_FLOAT_EQ(LoadNewtonsToSpringLipsTicks(100.0f), 539.62f);
+  EXPECT_FLOAT_EQ(LoadNewtonsToSpringLipsTicks(-10.0f), 123.248f);
+}
+
 }  // namespace
 }  // namespace elevated_control

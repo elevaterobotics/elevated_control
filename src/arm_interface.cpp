@@ -795,11 +795,11 @@ std::expected<void, Error> ArmInterface::SetTrajectory(
 
 std::expected<void, Error> ArmInterface::SetSpringSetpoint(
     float load_in_newtons) {
-  // Convert load in Newtons to potentiometer ticks using the linear
-  // relationship from SpringPotTicksToPayloadKg (inverted).
-  // payload_kg = 0.03 * ticks - 5.8  =>  ticks = (payload_kg + 5.8) / 0.03
-  float payload_kg = load_in_newtons / 9.81f;
-  float target_ticks = (payload_kg + 5.8f) / 0.03f;
+  if ((load_in_newtons < 0) || (load_in_newtons > 882))
+  {
+    return std::unexpected(Error{ErrorCode::kInvalidSpringSetpoint, "Invalid spring setpoint"});
+  }
+  float target_ticks = LoadNewtonsToSpringLipsTicks(load_in_newtons);
   spring_setpoint_target_.emplace(target_ticks);
   return {};
 }
