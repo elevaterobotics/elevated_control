@@ -11,6 +11,14 @@
 
 namespace elevated_control {
 
+// Converts commanded spring load (N) to LIPS potentiometer tick target.
+// Used by `ArmInterface::SetSpringSetpoint`.
+inline float LoadNewtonsToSpringLipsTicks(float load_newtons) {
+  constexpr float kSlope = 3.7852f;
+  constexpr float kIntercept = 161.1f;
+  return kSlope * load_newtons + kIntercept;
+}
+
 struct SpringAdjustState {
   std::chrono::steady_clock::time_point time_prev;
   std::optional<float> error_prev;
