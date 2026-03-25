@@ -22,6 +22,7 @@
 #include "elevated_control/joint_limits.hpp"
 #include "elevated_control/state_machine.hpp"
 #include "elevated_control/unit_conversions.hpp"
+#include "elevated_control/wrist_pitch_dial.hpp"
 
 using namespace std::chrono_literals;
 
@@ -1014,11 +1015,6 @@ void ArmInterface::RefreshHandGuidedPitchBrakeHold() {
     normalized_dial = 0.0f;
   }
 
-  {
-    // TODO: revert when dials are operational
-    normalized_dial = 0.0f;
-  }
-
   if (std::abs(normalized_dial) < kWristPitchBrakeOnThreshold) {
     hold_in_shutdown_[kWristPitchIdx] = true;
   } else if (hold_in_shutdown_[kWristPitchIdx].load() &&
@@ -1420,24 +1416,7 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
           normalized_dial = 0.0f;
         }
 
-        float velocity = 0.0f;
-        {
-          // TODO: revert when dials are operational
-          // const float v_max = kMaxWristPitchVelocity;
-          // const float slope = v_max / (1.0f - kWristPitchDeadband);
-          // if (normalized_dial > 1.0f) {
-          //   velocity = v_max;
-          // } else if (normalized_dial >= kWristPitchDeadband &&
-          //            normalized_dial <= 1.0f) {
-          //   velocity = slope * (normalized_dial - kWristPitchDeadband);
-          // } else if (normalized_dial < -1.0f) {
-          //   velocity = -v_max;
-          // } else if (normalized_dial <= -kWristPitchDeadband &&
-          //            normalized_dial >= -1.0f) {
-          //   velocity = slope * (normalized_dial - (-1.0f)) - v_max;
-          // }
-          normalized_dial = 0.0f;
-        }
+        float velocity = WristPitchDialNormalizedToVelocity(normalized_dial);
 
         velocity = wrist_pitch_dial_filter_.Filter(velocity);
 

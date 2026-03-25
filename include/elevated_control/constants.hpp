@@ -68,7 +68,9 @@ inline constexpr float kWristRollDeadband = 0.1f;
 inline constexpr float kWristPitchBrakeOnThreshold = 0.01f;
 inline constexpr float kWristPitchBrakeOffThreshold = 0.02f;
 
-// Max wrist velocity from hand-guided dial (rad/s)
+// Hand-guided wrist pitch dial: min/max commanded velocity (rad/s) for the ramp
+// from deadband to full throw (see wrist_pitch_dial.hpp).
+inline constexpr float kMinWristPitchDialVelocity = 0.15f;
 inline constexpr float kMaxWristPitchVelocity = 0.3f;
 inline constexpr float kMaxWristRollVelocity = 0.6f;
 
