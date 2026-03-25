@@ -1680,6 +1680,7 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
           float target = spring_setpoint_target_->load();
           float actuator_torque = SpringAdjustByLIPS(
               target, lips_spring_position, allow, spring_adjust_state_);
+          // TODO: filter it
           allow_mode_change_ = allow;
           out_somanet_[joint_idx]->TargetTorque = static_cast<std::int16_t>(actuator_torque);
           out_somanet_[joint_idx]->OpMode = kProfileTorqueMode;

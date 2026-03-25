@@ -19,9 +19,19 @@ float SpringAdjustByLIPS(float target_position,
   auto time_now = std::chrono::steady_clock::now();
   std::chrono::duration<float> time_elapsed = time_now - state.time_prev;
   float error_dt = 0.0f;
-  if (state.error_prev) {
+
+  // Derivative calculation
+  if (time_elapsed.count() <= 0.0f)
+  {
+    error_dt = 0;
+  }
+  else if (state.error_prev) {
     error_dt = (error - *state.error_prev) / time_elapsed.count();
   }
+  else {
+    error_dt = 0;
+  }
+
   state.error_prev = error;
   state.time_prev = time_now;
   float actuator_torque = kP * error + kD * error_dt;
