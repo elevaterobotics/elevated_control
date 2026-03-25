@@ -13,11 +13,16 @@ target_link_libraries(hand_guided PRIVATE ${PROJECT_NAME})
 target_include_directories(hand_guided PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR})
 
+add_executable(spring_adjust spring_adjust.cpp)
+target_link_libraries(spring_adjust PRIVATE ${PROJECT_NAME})
+target_include_directories(spring_adjust PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR})
+
 set(EXAMPLE_CONFIG_YAMLS
   ${CMAKE_CURRENT_SOURCE_DIR}/joint_limits.yaml
   ${CMAKE_CURRENT_SOURCE_DIR}/elevate_config.yaml
 )
-foreach(exe basic_usage velocity_commands hand_guided)
+foreach(exe basic_usage velocity_commands hand_guided spring_adjust)
   foreach(yaml ${EXAMPLE_CONFIG_YAMLS})
     add_custom_command(
       TARGET ${exe} POST_BUILD
@@ -30,7 +35,7 @@ foreach(exe basic_usage velocity_commands hand_guided)
 endforeach()
 
 install(
-	TARGETS basic_usage velocity_commands hand_guided
+	TARGETS basic_usage velocity_commands hand_guided spring_adjust
 	RUNTIME DESTINATION examples
 )
 
