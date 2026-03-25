@@ -9,13 +9,13 @@ namespace elevated_control {
 /**
  * @brief Map post-deadband normalized dial [-1, 1] to commanded wrist pitch velocity (rad/s).
  *
- * Piecewise linear between ±kWristPitchDeadband and ±1, saturates at ±kMaxWristPitchVelocity
+ * Piecewise linear between ±kWristPitchDeadband and ±1, saturates at ±kMaxWristPitchDialVelocity
  * outside ±1. Values strictly inside (-kWristPitchDeadband, kWristPitchDeadband) yield 0
  * (typically the caller zeros the dial in the deadband before calling this).
  */
 inline float WristPitchDialNormalizedToVelocity(float normalized_dial) {
-  const float v_min = -kMinWristPitchDialVelocity;
-  const float v_max = kMaxWristPitchVelocity;
+  const float v_min = kMinWristPitchDialVelocity;
+  const float v_max = kMaxWristPitchDialVelocity;
   const float slope =
       (v_max - v_min) / (1.0f - kWristPitchDeadband);
   if (normalized_dial > 1.0f) {

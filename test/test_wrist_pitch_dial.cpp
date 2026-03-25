@@ -10,8 +10,8 @@ namespace {
 constexpr float kEps = 1e-6f;
 
 float ExpectedVelocityPositiveRamp(float normalized_dial) {
-  const float v_min = -elevated_control::kMinWristPitchDialVelocity;
-  const float v_max = elevated_control::kMaxWristPitchVelocity;
+  const float v_min = elevated_control::kMinWristPitchDialVelocity;
+  const float v_max = elevated_control::kMaxWristPitchDialVelocity;
   const float slope =
       (v_max - v_min) / (1.0f - elevated_control::kWristPitchDeadband);
   return slope * (normalized_dial - elevated_control::kWristPitchDeadband) +
@@ -19,8 +19,8 @@ float ExpectedVelocityPositiveRamp(float normalized_dial) {
 }
 
 float ExpectedVelocityNegativeRamp(float normalized_dial) {
-  const float v_min = -elevated_control::kMinWristPitchDialVelocity;
-  const float v_max = elevated_control::kMaxWristPitchVelocity;
+  const float v_min = elevated_control::kMinWristPitchDialVelocity;
+  const float v_max = elevated_control::kMaxWristPitchDialVelocity;
   const float slope =
       (v_max - v_min) / (1.0f - elevated_control::kWristPitchDeadband);
   return slope *
@@ -36,29 +36,29 @@ TEST(WristPitchDialVelocity, ZeroAtNeutral) {
 }
 
 TEST(WristPitchDialVelocity, RampEndpointsAtDeadband) {
-  using elevated_control::kMaxWristPitchVelocity;
+  using elevated_control::kMaxWristPitchDialVelocity;
   using elevated_control::kMinWristPitchDialVelocity;
   using elevated_control::kWristPitchDeadband;
   using elevated_control::WristPitchDialNormalizedToVelocity;
 
   EXPECT_NEAR(WristPitchDialNormalizedToVelocity(kWristPitchDeadband),
-              -kMinWristPitchDialVelocity, kEps);
-  EXPECT_NEAR(WristPitchDialNormalizedToVelocity(-kWristPitchDeadband),
               kMinWristPitchDialVelocity, kEps);
-  EXPECT_NEAR(WristPitchDialNormalizedToVelocity(1.0f), kMaxWristPitchVelocity,
+  EXPECT_NEAR(WristPitchDialNormalizedToVelocity(-kWristPitchDeadband),
+              -kMinWristPitchDialVelocity, kEps);
+  EXPECT_NEAR(WristPitchDialNormalizedToVelocity(1.0f), kMaxWristPitchDialVelocity,
               kEps);
-  EXPECT_NEAR(WristPitchDialNormalizedToVelocity(-1.0f), -kMaxWristPitchVelocity,
+  EXPECT_NEAR(WristPitchDialNormalizedToVelocity(-1.0f), -kMaxWristPitchDialVelocity,
               kEps);
 }
 
 TEST(WristPitchDialVelocity, SaturatesOutsideUnitRange) {
-  using elevated_control::kMaxWristPitchVelocity;
+  using elevated_control::kMaxWristPitchDialVelocity;
   using elevated_control::WristPitchDialNormalizedToVelocity;
 
   EXPECT_FLOAT_EQ(WristPitchDialNormalizedToVelocity(1.5f),
-                  kMaxWristPitchVelocity);
+                  kMaxWristPitchDialVelocity);
   EXPECT_FLOAT_EQ(WristPitchDialNormalizedToVelocity(-1.5f),
-                  -kMaxWristPitchVelocity);
+                  -kMaxWristPitchDialVelocity);
 }
 
 TEST(WristPitchDialVelocity, InteriorPointsMatchLinearRamp) {
