@@ -795,6 +795,10 @@ std::expected<void, Error> ArmInterface::SetTrajectory(
 
 std::expected<void, Error> ArmInterface::SetSpringSetpoint(
     float load_in_newtons) {
+  if ((load_in_newtons < 0) || (load_in_newtons > 882))
+  {
+    return std::unexpected(Error{ErrorCode::kInvalidSpringSetpoint, "Invalid spring setpoint"});
+  }
   float target_ticks = LoadNewtonsToSpringLipsTicks(load_in_newtons);
   spring_setpoint_target_.emplace(target_ticks);
   return {};
