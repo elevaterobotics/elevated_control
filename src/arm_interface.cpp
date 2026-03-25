@@ -1729,7 +1729,9 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
           control_level_[joint_idx] = ControlLevel::kQuickStop;
         }
       } else {
-        spdlog::warn("A spring adjust setpoint wasn't defined for the spring adjust joint. Stopping.");
+        // When spring adjustment is done, SpringAdjustByLIPS sets allow_mode_change_ to true.
+        // Require a new spring setpoint for the next time this mode runs.
+        spring_setpoint_target_ = std::nullopt;
         control_level_[joint_idx] = ControlLevel::kQuickStop;
       }
     } else {
