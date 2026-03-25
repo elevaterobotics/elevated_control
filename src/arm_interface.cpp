@@ -1082,42 +1082,6 @@ void ArmInterface::ApplyFrictionCompensation(std::size_t joint_idx) {
   }
 }
 
-float ArmInterface::SpringAdjustByLIPS(float target_position,
-                                       std::int32_t current_lips_position,
-                                       bool& allow_mode_change) {
-  constexpr float kP = 15.0f;
-  constexpr float kD = 0.0f;
-  float error = target_position - static_cast<float>(current_lips_position);
-  auto time_now = std::chrono::steady_clock::now();
-  std::chrono::duration<float> time_elapsed =
-      time_now - spring_adjust_state_.time_prev;
-  float error_dt = 0.0f;
-  if (spring_adjust_state_.error_prev) {
-    error_dt =
-        (error - *spring_adjust_state_.error_prev) / time_elapsed.count();
-  }
-  spring_adjust_state_.error_prev = error;
-  spring_adjust_state_.time_prev = time_now;
-  float actuator_torque = kP * error + kD * error_dt;
-
-  if (actuator_torque > 0) {
-    actuator_torque = std::clamp(actuator_torque, kSpringAdjustMinTorque,
-                                 kSpringAdjustMaxTorque);
-  } else {
-    actuator_torque = std::clamp(actuator_torque, -kSpringAdjustMaxTorque,
-                                 -kSpringAdjustMinTorque);
-  }
-
-  if (std::abs(error) < 50.0f) {
-    actuator_torque = 0.0f;
-    if (!allow_mode_change) {
-      allow_mode_change = true;
-    }
-  }
-
-  return actuator_torque;
-}
-
 // ============================================================================
 // EtherCAT error monitoring
 // ============================================================================
@@ -1714,7 +1678,9 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
         bool allow = allow_mode_change_.load();
         if (spring_setpoint_target_.has_value()) {
           float target = spring_setpoint_target_->load();
-          float actuator_torque = SpringAdjustByLIPS(target, lips_spring_position, allow);
+          float actuator_torque = SpringAdjustByLIPS(
+              target, lips_spring_position, allow, spring_adjust_state_);
+          // TODO: filter it
           allow_mode_change_ = allow;
           out_somanet_[joint_idx]->TargetTorque = static_cast<std::int16_t>(actuator_torque);
           out_somanet_[joint_idx]->OpMode = kProfileTorqueMode;
@@ -1729,8 +1695,10 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
           control_level_[joint_idx] = ControlLevel::kQuickStop;
         }
       } else {
-        spdlog::warn("A spring adjust setpoint wasn't defined for the spring adjust joint. Stopping.");
-        control_level_[joint_idx] = ControlLevel::kQuickStop;
+        // When spring adjustment is done, SpringAdjustByLIPS sets allow_mode_change_ to true.
+        // Require a new spring setpoint for the next time this mode runs.
+        CompleteSpringAdjustSession(spring_setpoint_target_,
+                                    control_level_[joint_idx]);
       }
     } else {
       // Non-spring joints in spring adjust mode: quick stop

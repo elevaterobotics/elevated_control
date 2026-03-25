@@ -22,15 +22,11 @@
 #include "elevated_control/dynamic_sim.hpp"
 #include "elevated_control/joint_admittance.hpp"
 #include "elevated_control/somanet_pdo.hpp"
+#include "elevated_control/spring_adjust.hpp"
 #include "elevated_control/types.hpp"
 #include "elevated_control/velocity_filter.hpp"
 
 namespace elevated_control {
-
-struct SpringAdjustState {
-  std::chrono::steady_clock::time_point time_prev;
-  std::optional<float> error_prev;
-};
 
 struct JointLimitsInfo {
   float min_position;
@@ -159,11 +155,6 @@ class ArmInterface {
 
   float CalculateUserTorque(const InSomanet50t* in_somanet,
                             std::size_t joint_idx);
-
-  // Spring adjust PD control via linear potentiometer
-  float SpringAdjustByLIPS(float target_position,
-                           std::int32_t current_lips_position,
-                           bool& allow_mode_change);
 
   // E-stop and process data check
   bool EStopEngaged();
