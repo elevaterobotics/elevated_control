@@ -31,6 +31,7 @@ inline constexpr std::uint16_t kQuickStopCtrlWord = 0b00001011;
 // Buffer to subtract from position limits, allowing the robot to reverse out of
 // the position limit (rad)
 inline constexpr float kPositionLimitBuffer = 0.3f;
+static_assert(kPositionLimitBuffer > 0.0f, "Position limit buffer must be positive");
 // In torque mode, begin pushing back when this far from the limit (rad)
 inline constexpr float kJointLimitTorqueBrakeDistance = 0.09f;
 
