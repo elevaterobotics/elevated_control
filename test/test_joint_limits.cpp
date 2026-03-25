@@ -132,7 +132,7 @@ TEST_F(JointLimitTest, NearMinLimitPositiveVelocityReturnsOriginalCommand) {
   EXPECT_FLOAT_EQ(result->second, requested_command_);
 }
 
-TEST_F(JointLimitTest, NearMinLimitNegativeVelocityClampedToZero) {
+TEST_F(JointLimitTest, NearMinLimitNegativeVelocityScaledInBuffer) {
   current_position_ =
       min_position_limits_[joint_idx_] + kPositionLimitBuffer - 0.01f;
   requested_command_ = -0.5f;
@@ -143,10 +143,13 @@ TEST_F(JointLimitTest, NearMinLimitNegativeVelocityClampedToZero) {
                          max_position_limits_, requested_command_);
 
   ASSERT_TRUE(result.has_value());
-  EXPECT_FLOAT_EQ(result->second, 0.0f);
+  const float expected_scale =
+      (current_position_ - min_position_limits_[joint_idx_]) /
+      kPositionLimitBuffer;
+  EXPECT_NEAR(result->second, requested_command_ * expected_scale, EPS);
 }
 
-TEST_F(JointLimitTest, AtMinLimitBufferNegativeVelocityClampedToZero) {
+TEST_F(JointLimitTest, AtMinLimitBufferNegativeVelocityScaledInBuffer) {
   current_position_ =
       min_position_limits_[joint_idx_] + kPositionLimitBuffer - 0.001f;
   requested_command_ = -0.5f;
@@ -157,7 +160,10 @@ TEST_F(JointLimitTest, AtMinLimitBufferNegativeVelocityClampedToZero) {
                          max_position_limits_, requested_command_);
 
   ASSERT_TRUE(result.has_value());
-  EXPECT_FLOAT_EQ(result->second, 0.0f);
+  const float expected_scale =
+      (current_position_ - min_position_limits_[joint_idx_]) /
+      kPositionLimitBuffer;
+  EXPECT_NEAR(result->second, requested_command_ * expected_scale, EPS);
 }
 
 TEST_F(JointLimitTest, NearMaxLimitNegativeVelocityReturnsOriginalCommand) {
@@ -174,9 +180,25 @@ TEST_F(JointLimitTest, NearMaxLimitNegativeVelocityReturnsOriginalCommand) {
   EXPECT_FLOAT_EQ(result->second, requested_command_);
 }
 
-TEST_F(JointLimitTest, NearMaxLimitPositiveVelocityClampedToZero) {
+TEST_F(JointLimitTest, NearMaxLimitPositiveVelocityScaledInBuffer) {
   current_position_ =
       max_position_limits_[joint_idx_] - kPositionLimitBuffer + 0.01f;
+  requested_command_ = 0.5f;
+
+  auto result =
+      JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
+                         has_position_limits_, min_position_limits_,
+                         max_position_limits_, requested_command_);
+
+  ASSERT_TRUE(result.has_value());
+  const float expected_scale =
+      (max_position_limits_[joint_idx_] - current_position_) /
+      kPositionLimitBuffer;
+  EXPECT_NEAR(result->second, requested_command_ * expected_scale, EPS);
+}
+
+TEST_F(JointLimitTest, AboveMaxLimitPositiveVelocityClampedToZero) {
+  current_position_ = max_position_limits_[joint_idx_] + 0.1f;
   requested_command_ = 0.5f;
 
   auto result =
@@ -188,10 +210,9 @@ TEST_F(JointLimitTest, NearMaxLimitPositiveVelocityClampedToZero) {
   EXPECT_FLOAT_EQ(result->second, 0.0f);
 }
 
-TEST_F(JointLimitTest, AtMaxLimitBufferPositiveVelocityClampedToZero) {
-  current_position_ =
-      max_position_limits_[joint_idx_] - kPositionLimitBuffer + 0.1f;
-  requested_command_ = 0.5f;
+TEST_F(JointLimitTest, BelowMinLimitNegativeVelocityClampedToZero) {
+  current_position_ = min_position_limits_[joint_idx_] - 0.1f;
+  requested_command_ = -0.5f;
 
   auto result =
       JointLimitCmdClamp(joint_idx_, control_level_, current_position_,
@@ -700,7 +721,7 @@ TEST_F(JointLimitTest, SetVelocityWithLimits_NormalOperation) {
   EXPECT_EQ(out_somanet_.VelocityOffset, 0);
 }
 
-TEST_F(JointLimitTest, SetVelocityWithLimits_Clamping) {
+TEST_F(JointLimitTest, SetVelocityWithLimits_ScalesVelocityInBuffer) {
   float desired_pos = -0.96f;
   int32_t ticks = static_cast<int32_t>(
       desired_pos * mechanical_reduction_ * encoder_resolution_ /
@@ -710,12 +731,22 @@ TEST_F(JointLimitTest, SetVelocityWithLimits_Clamping) {
   requested_command_ = -0.5f;
 
   const int32_t si_velocity_unit = 0;
+  const float actual_position = InputTicksToOutputShaftRad(
+      in_somanet_.PositionValue, mechanical_reduction_, encoder_resolution_,
+      joint_idx_);
+  const float expected_velocity =
+      requested_command_ *
+      ((actual_position - min_position_limits_[joint_idx_]) /
+       kPositionLimitBuffer);
   SetVelocityWithLimits(joint_idx_, &in_somanet_, has_position_limits_,
                         min_position_limits_, max_position_limits_,
                         mechanical_reduction_, encoder_resolution_,
                         requested_command_, si_velocity_unit, &out_somanet_);
 
-  EXPECT_FLOAT_EQ(out_somanet_.TargetVelocity, 0.0f);
+  EXPECT_EQ(out_somanet_.TargetVelocity,
+            OutputShaftRadPerSToVelocityValue(
+                expected_velocity, si_velocity_unit, mechanical_reduction_,
+                encoder_resolution_));
   EXPECT_EQ(out_somanet_.OpMode, kCyclicVelocityMode);
   EXPECT_EQ(out_somanet_.VelocityOffset, 0);
 }
@@ -740,7 +771,7 @@ TEST_F(JointLimitTest, SetVelocityWithLimits_NormalOperation_MilliRpmUnit) {
 }
 
 // SetVelocityWithLimits: Clamping with milli-RPM si_velocity_unit
-TEST_F(JointLimitTest, SetVelocityWithLimits_Clamping_MilliRpmUnit) {
+TEST_F(JointLimitTest, SetVelocityWithLimits_ScalesVelocityInBuffer_MilliRpmUnit) {
   const int32_t si_velocity_unit =
       static_cast<int32_t>(0xFDB44700u);
 
@@ -751,13 +782,23 @@ TEST_F(JointLimitTest, SetVelocityWithLimits_Clamping_MilliRpmUnit) {
 
   in_somanet_.PositionValue = ticks;
   requested_command_ = -0.5f;
+  const float actual_position = InputTicksToOutputShaftRad(
+      in_somanet_.PositionValue, mechanical_reduction_, encoder_resolution_,
+      joint_idx_);
+  const float expected_velocity =
+      requested_command_ *
+      ((actual_position - min_position_limits_[joint_idx_]) /
+       kPositionLimitBuffer);
 
   SetVelocityWithLimits(joint_idx_, &in_somanet_, has_position_limits_,
                         min_position_limits_, max_position_limits_,
                         mechanical_reduction_, encoder_resolution_,
                         requested_command_, si_velocity_unit, &out_somanet_);
 
-  EXPECT_EQ(out_somanet_.TargetVelocity, 0);
+  EXPECT_EQ(out_somanet_.TargetVelocity,
+            OutputShaftRadPerSToVelocityValue(
+                expected_velocity, si_velocity_unit, mechanical_reduction_,
+                encoder_resolution_));
   EXPECT_EQ(out_somanet_.OpMode, kCyclicVelocityMode);
   EXPECT_EQ(out_somanet_.VelocityOffset, 0);
 }
