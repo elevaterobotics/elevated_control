@@ -19,6 +19,7 @@
 
 #include "elevated_control/config_parsing.hpp"
 #include "elevated_control/constants.hpp"
+#include "elevated_control/dial_normalization.hpp"
 #include "elevated_control/dynamic_sim.hpp"
 #include "elevated_control/joint_admittance.hpp"
 #include "elevated_control/somanet_pdo.hpp"
@@ -257,7 +258,10 @@ class ArmInterface {
   JointArray<std::optional<JointAdmittance>> joint_admittances_{};
 
   // Filters
-  VelocityFilter wrist_pitch_dial_filter_{0.3f};
+  VelocityFilter wrist_pitch_dial_filter_{0.9f};
+  DialActivationState wrist_pitch_dial_state_{};
+  VelocityFilter wrist_roll_dial_filter_{0.9f};
+  VelocityFilter wrist_roll_admittance_filter_{0.98f};
   VelocityFilter yaw1_torque_filter_{0.92f};
   VelocityFilter yaw2_torque_filter_{0.7f};
   VelocityFilter wrist_yaw_torque_filter_{0.7f};

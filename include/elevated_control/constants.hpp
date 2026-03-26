@@ -61,18 +61,13 @@ inline constexpr unsigned int kCyclicLoopSleepUs = 5000;
 // synapticon_ros2_control::SynapticonSystemInterface::read). At ~5 ms/cycle, 200 ≈ 1 s.
 inline constexpr int kMinPdoExchanges = 200;
 
-// Deadband for wrist pitch dial. Must be in the range [0, 1]. Unitless.
-inline constexpr float kWristPitchDeadband = 0.05f;
+// Wrist dials (hand-guided): normalized input [-1, 1] after centering.
+inline constexpr float kMaxWristPitchDialVelocity = 0.3f;  // rad/s
+inline constexpr float kWristPitchDeadband = 0.2f;
+inline constexpr float kWristPitchDeadbandHysteresis =
+    0.1f;  // should remain < kWristPitchDeadband
+inline constexpr float kMaxWristRollDialVelocity = 0.6f;  // rad/s
 inline constexpr float kWristRollDeadband = 0.1f;
-// Brake hysteresis for hand-guided pitch
-inline constexpr float kWristPitchBrakeOnThreshold = 0.01f;
-inline constexpr float kWristPitchBrakeOffThreshold = 0.02f;
-
-// Hand-guided wrist pitch dial: min/max commanded velocity (rad/s) for the ramp
-// from deadband to full throw (see wrist_pitch_dial.hpp).
-inline constexpr float kMinWristPitchDialVelocity = 0.15f;
-inline constexpr float kMaxWristPitchDialVelocity = 0.3f;
-inline constexpr float kMaxWristRollVelocity = 0.6f;
 
 // Admittance velocity scaling (matches synapticon ADMITTANCE_VELOCITY_MULTIPLIER)
 inline constexpr float kAdmittanceVelocityMultiplier = 10000.0f;
