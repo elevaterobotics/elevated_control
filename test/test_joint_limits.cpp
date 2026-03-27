@@ -42,6 +42,7 @@ class JointLimitTest : public ::testing::Test {
   OutSomanet50t out_somanet_;
   float mechanical_reduction_ = 1.0f;
   uint32_t encoder_resolution_ = 10000;
+  VelocityFilter passthrough_filter_{0.0f};
 };
 
 // In elevated_control, HAND_GUIDED is handled like torque mode (not nullopt)
@@ -714,7 +715,8 @@ TEST_F(JointLimitTest, SetVelocityWithLimits_NormalOperation) {
   SetVelocityWithLimits(joint_idx_, &in_somanet_, has_position_limits_,
                         min_position_limits_, max_position_limits_,
                         mechanical_reduction_, encoder_resolution_,
-                        requested_command_, si_velocity_unit, &out_somanet_);
+                        requested_command_, si_velocity_unit,
+                        passthrough_filter_, &out_somanet_);
 
   EXPECT_EQ(out_somanet_.TargetVelocity, expected);
   EXPECT_EQ(out_somanet_.OpMode, kCyclicVelocityMode);
@@ -741,7 +743,8 @@ TEST_F(JointLimitTest, SetVelocityWithLimits_ScalesVelocityInBuffer) {
   SetVelocityWithLimits(joint_idx_, &in_somanet_, has_position_limits_,
                         min_position_limits_, max_position_limits_,
                         mechanical_reduction_, encoder_resolution_,
-                        requested_command_, si_velocity_unit, &out_somanet_);
+                        requested_command_, si_velocity_unit,
+                        passthrough_filter_, &out_somanet_);
 
   EXPECT_EQ(out_somanet_.TargetVelocity,
             OutputShaftRadPerSToVelocityValue(
@@ -761,7 +764,8 @@ TEST_F(JointLimitTest, SetVelocityWithLimits_NormalOperation_MilliRpmUnit) {
   SetVelocityWithLimits(joint_idx_, &in_somanet_, has_position_limits_,
                         min_position_limits_, max_position_limits_,
                         mechanical_reduction_, encoder_resolution_,
-                        requested_command_, si_velocity_unit, &out_somanet_);
+                        requested_command_, si_velocity_unit,
+                        passthrough_filter_, &out_somanet_);
 
   int32_t expected = OutputShaftRadPerSToVelocityValue(
       1.0f, si_velocity_unit, mechanical_reduction_, encoder_resolution_);
@@ -793,7 +797,8 @@ TEST_F(JointLimitTest, SetVelocityWithLimits_ScalesVelocityInBuffer_MilliRpmUnit
   SetVelocityWithLimits(joint_idx_, &in_somanet_, has_position_limits_,
                         min_position_limits_, max_position_limits_,
                         mechanical_reduction_, encoder_resolution_,
-                        requested_command_, si_velocity_unit, &out_somanet_);
+                        requested_command_, si_velocity_unit,
+                        passthrough_filter_, &out_somanet_);
 
   EXPECT_EQ(out_somanet_.TargetVelocity,
             OutputShaftRadPerSToVelocityValue(

@@ -11,7 +11,7 @@ foreach(test_name
   test_state_machine
   test_streaming_spring_slot
   test_spring_adjust
-  test_wrist_pitch_dial
+  test_dial_normalization
 )
   add_executable(${test_name} ${test_name}.cpp)
   target_link_libraries(${test_name} PRIVATE ${PROJECT_NAME} GTest::gtest GTest::gtest_main)

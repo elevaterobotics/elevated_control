@@ -12,6 +12,7 @@
 #include "elevated_control/somanet_pdo.hpp"
 #include "elevated_control/types.hpp"
 #include "elevated_control/unit_conversions.hpp"
+#include "elevated_control/velocity_filter.hpp"
 
 namespace elevated_control {
 
@@ -130,6 +131,7 @@ inline void SetVelocityWithLimits(
     const JointFloatArray& max_position_limits,
     const float mechanical_reduction, const std::uint32_t encoder_resolution,
     const float requested_velocity, const std::int32_t si_velocity_unit,
+    VelocityFilter& velocity_filter,
     OutSomanet50t* out_somanet) {
   float output_velocity = requested_velocity;
   if (has_position_limits[joint_idx] &&
@@ -147,6 +149,7 @@ inline void SetVelocityWithLimits(
       output_velocity = result.value().second;
     }
   }
+  output_velocity = velocity_filter.Filter(output_velocity);
   out_somanet->TargetVelocity = OutputShaftRadPerSToVelocityValue(
       output_velocity, si_velocity_unit, mechanical_reduction,
       encoder_resolution);
