@@ -1442,7 +1442,7 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
               out_somanet_[joint_idx]);
         }
       }
-      // Wrist roll (dial controlled; matches synapticon HAND_GUIDED)
+      // Wrist roll (dial controlled)
       else if (joint_idx == kWristRollIdx) {
         std::optional<std::int32_t> wrist_roll_dial_value = ReadSDOValue(
             static_cast<std::uint16_t>(kWristYawIdx + 1), 0x2402, 0x00);
