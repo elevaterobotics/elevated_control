@@ -110,8 +110,8 @@ class ArmInterface {
 
   // -- Spring --
 
-  // Convert load in Newtons to potentiometer ticks using a linear relationship
-  // Sets spring_setpoint_target_ in ticks
+  // Convert load in Newtons to potentiometer ticks using a linear relationship.
+  // Starts or retargets a spring-adjust session for the spring joint.
   std::expected<void, Error> SetSpringSetpoint(float load_in_newtons);
 
   // -- State queries --
@@ -252,7 +252,8 @@ class ArmInterface {
 
   // Spring adjust
   SpringAdjustState spring_adjust_state_;
-  std::optional<std::atomic<float>> spring_setpoint_target_{};
+  std::atomic<float> spring_setpoint_target_ticks_{0.0f};
+  std::atomic<bool> has_spring_setpoint_{false};
 
   // Admittance
   JointArray<std::optional<JointAdmittance>> joint_admittances_{};

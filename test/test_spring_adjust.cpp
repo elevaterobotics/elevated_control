@@ -68,23 +68,55 @@ TEST(SpringAdjustByLIPS, ErrorAtThresholdDoesNotComplete) {
   EXPECT_FALSE(allow);
 }
 
+TEST(SpringAdjustSetpointStorage, StoresAndOverwritesTarget) {
+  std::atomic<float> setpoint_ticks{0.0f};
+  std::atomic<bool> has_setpoint{false};
+
+  EXPECT_FALSE(
+      LoadSpringAdjustSetpoint(setpoint_ticks, has_setpoint).has_value());
+
+  StoreSpringAdjustSetpoint(setpoint_ticks, has_setpoint, 123.0f);
+  auto first_setpoint = LoadSpringAdjustSetpoint(setpoint_ticks, has_setpoint);
+  ASSERT_TRUE(first_setpoint.has_value());
+  EXPECT_FLOAT_EQ(*first_setpoint, 123.0f);
+
+  StoreSpringAdjustSetpoint(setpoint_ticks, has_setpoint, 456.0f);
+  auto second_setpoint = LoadSpringAdjustSetpoint(setpoint_ticks, has_setpoint);
+  ASSERT_TRUE(second_setpoint.has_value());
+  EXPECT_FLOAT_EQ(*second_setpoint, 456.0f);
+}
+
 TEST(CompleteSpringAdjustSession, ClearsSetpointAndSetsQuickStop) {
-  std::optional<std::atomic<float>> setpoint;
-  setpoint.emplace(123.0f);
+  std::atomic<float> setpoint_ticks{123.0f};
+  std::atomic<bool> has_setpoint{true};
   ControlLevel level = ControlLevel::kSpringAdjust;
-  CompleteSpringAdjustSession(setpoint, level);
-  EXPECT_FALSE(setpoint.has_value());
+  CompleteSpringAdjustSession(has_setpoint, level);
+  EXPECT_FALSE(LoadSpringAdjustSetpoint(setpoint_ticks, has_setpoint).has_value());
   EXPECT_EQ(level, ControlLevel::kQuickStop);
 }
 
-TEST(LoadNewtonsToSpringLipsTicks, ZeroNewtonsIsIntercept) {
-  EXPECT_FLOAT_EQ(LoadNewtonsToSpringLipsTicks(0.0f), 161.1f);
+TEST(SpringAdjustSetpointStorage, CanStoreNewTargetAfterCompletion) {
+  std::atomic<float> setpoint_ticks{123.0f};
+  std::atomic<bool> has_setpoint{true};
+  ControlLevel level = ControlLevel::kSpringAdjust;
+
+  CompleteSpringAdjustSession(has_setpoint, level);
+  StoreSpringAdjustSetpoint(setpoint_ticks, has_setpoint, 789.0f);
+
+  auto new_setpoint = LoadSpringAdjustSetpoint(setpoint_ticks, has_setpoint);
+  ASSERT_TRUE(new_setpoint.has_value());
+  EXPECT_FLOAT_EQ(*new_setpoint, 789.0f);
+  EXPECT_EQ(level, ControlLevel::kQuickStop);
 }
 
-TEST(LoadNewtonsToSpringLipsTicks, MatchesLinearModel) {
+TEST(ConvertNewtonsToSpringLipsTicks, ZeroNewtonsIsIntercept) {
+  EXPECT_FLOAT_EQ(ConvertNewtonsToSpringLipsTicks(0.0f), 161.1f);
+}
+
+TEST(ConvertNewtonsToSpringLipsTicks, MatchesLinearModel) {
   // 3.7852 * 100 + 161.1
-  EXPECT_FLOAT_EQ(LoadNewtonsToSpringLipsTicks(100.0f), 539.62f);
-  EXPECT_FLOAT_EQ(LoadNewtonsToSpringLipsTicks(-10.0f), 123.248f);
+  EXPECT_FLOAT_EQ(ConvertNewtonsToSpringLipsTicks(100.0f), 539.62f);
+  EXPECT_FLOAT_EQ(ConvertNewtonsToSpringLipsTicks(-10.0f), 123.248f);
 }
 
 }  // namespace

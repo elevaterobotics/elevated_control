@@ -804,9 +804,22 @@ std::expected<void, Error> ArmInterface::SetSpringSetpoint(
   {
     return std::unexpected(Error{ErrorCode::kInvalidSpringSetpoint, "Invalid spring setpoint"});
   }
-  float target_ticks = LoadNewtonsToSpringLipsTicks(load_in_newtons);
-  spring_setpoint_target_.emplace(target_ticks);
-  return {};
+  const float target_ticks = ConvertNewtonsToSpringLipsTicks(load_in_newtons);
+  StoreSpringAdjustSetpoint(spring_setpoint_target_ticks_,
+                            has_spring_setpoint_, target_ticks);
+
+  const bool spring_adjust_active =
+      control_level_[kSpringAdjustIdx] == ControlLevel::kSpringAdjust;
+  const bool needs_fresh_session =
+      !spring_adjust_active ||
+      allow_mode_change_.load(std::memory_order_acquire);
+  if (!needs_fresh_session || !control_loop_running_) {
+    return {};
+  }
+
+  JointControlLevelArray new_modes = control_level_;
+  new_modes[kSpringAdjustIdx] = ControlLevel::kSpringAdjust;
+  return SwitchControlMode(new_modes);
 }
 
 // ============================================================================
@@ -1622,10 +1635,11 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
     if (joint_idx == kSpringAdjustIdx) {
       if (!allow_mode_change_) {
         bool allow = allow_mode_change_.load();
-        if (spring_setpoint_target_.has_value()) {
-          float target = spring_setpoint_target_->load();
+        const auto target = LoadSpringAdjustSetpoint(
+            spring_setpoint_target_ticks_, has_spring_setpoint_);
+        if (target.has_value()) {
           float actuator_torque = SpringAdjustByLIPS(
-              target, lips_spring_position, allow, spring_adjust_state_);
+              *target, lips_spring_position, allow, spring_adjust_state_);
           // TODO: filter it
           allow_mode_change_ = allow;
           out_somanet_[joint_idx]->TargetTorque = static_cast<std::int16_t>(actuator_torque);
@@ -1643,7 +1657,7 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
       } else {
         // When spring adjustment is done, SpringAdjustByLIPS sets allow_mode_change_ to true.
         // Require a new spring setpoint for the next time this mode runs.
-        CompleteSpringAdjustSession(spring_setpoint_target_,
+        CompleteSpringAdjustSession(has_spring_setpoint_,
                                     control_level_[joint_idx]);
       }
     } else {
