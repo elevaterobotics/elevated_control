@@ -35,18 +35,11 @@ int main() {
     return EXIT_FAILURE;
   }
 
-  // SetSpringSetpoint must be called before SwitchControlMode(kSpringAdjust)
+  // SetSpringSetpoint automatically changes the spring-adjust actuator control mode to kSpringAdjust
+  // It will be set to kQuickStop when the motion is complete
   auto sp = arm.SetSpringSetpoint(0.0f /* load in Newtons */);
   if (!sp) {
     spdlog::error("SetSpringSetpoint failed: {}", sp.error().message);
-    arm.StopControlLoop();
-    return EXIT_FAILURE;
-  }
-
-  auto mode = arm.SwitchControlMode(elevated_control::ControlLevel::kSpringAdjust);
-  if (!mode) {
-    spdlog::error("SwitchControlMode(kSpringAdjust) failed: {}",
-                  mode.error().message);
     arm.StopControlLoop();
     return EXIT_FAILURE;
   }
