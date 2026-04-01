@@ -36,7 +36,7 @@ struct JointLimitsInfo {
   bool has_limits;
 };
 
-// A copy of the PDO fields that are read outside the EtherCAT-owned path.
+// A copy of the PDO fields that are read outside the EtherCAT-owned path, for thread safety
 struct InSomanetSnapshot {
   std::int32_t position_value = 0;
   std::int32_t velocity_value = 0;
