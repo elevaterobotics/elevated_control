@@ -95,18 +95,34 @@ ArmInterface::ArmInterface(const Config& config)
       dynamic_simulator_(dynamic_sim_state_) {}
 
 ArmInterface::~ArmInterface() {
+  shutdown_requested_ = true;
+  in_normal_op_mode_ = false;
+
+  if (ecat_error_thread_.joinable()) {
+    ecat_error_thread_.request_stop();
+  }
+
   if (control_loop_running_) {
     auto result = StopControlLoop();
-    if (!result) {
+    if (!result &&
+        result.error().code != ErrorCode::kControlLoopNotRunning) {
       spdlog::error("StopControlLoop failed in destructor: {}",
                     result.error().message);
     }
   }
 
+  if (ecat_error_thread_.joinable()) {
+    ecat_error_thread_.join();
+  }
+
   if (initialized_) {
-    ec_slave[0].state = EC_STATE_INIT;
-    ec_writestate(0);
+    {
+      std::lock_guard<std::mutex> lock(ecat_mtx_);
+      ec_slave[0].state = EC_STATE_INIT;
+      ec_writestate(0);
+    }
     std::this_thread::sleep_for(1000ms);
+    std::lock_guard<std::mutex> lock(ecat_mtx_);
     ec_close();
   }
 }
@@ -122,6 +138,7 @@ std::expected<void, Error> ArmInterface::Initialize() {
   }
 
   // Initialize command buffers
+  shutdown_requested_ = false;
   control_level_.fill(ControlLevel::kUndefined);
   state_positions_.fill(std::numeric_limits<float>::quiet_NaN());
   state_velocities_.fill(std::numeric_limits<float>::quiet_NaN());
@@ -211,6 +228,44 @@ std::expected<void, Error> ArmInterface::Initialize() {
   WaitForGoodProcessData();
   HandleStartupFaults();
 
+<<<<<<< HEAD
+=======
+  // Request operational state for all slaves
+  expected_wkc_ = (ec_group[0].outputsWKC * 2) + ec_group[0].inputsWKC;
+  for (int slave_id = 0; slave_id < ec_slavecount; ++slave_id) {
+    ec_slave[slave_id].state = EC_STATE_OPERATIONAL;
+  }
+  ec_send_processdata();
+  ec_receive_processdata(EC_TIMEOUTRET);
+  ec_writestate(0);
+
+  // Wait for all slaves to reach OP state
+  uint16 actual_state;
+  std::size_t chk = 200;
+  do {
+    ec_send_processdata();
+    ec_receive_processdata(EC_TIMEOUTRET);
+    ec_readstate();
+    actual_state = ec_statecheck(0, EC_STATE_OPERATIONAL, 50000);
+  } while (chk-- && (actual_state != EC_STATE_OPERATIONAL));
+
+  if (chk == 0) {
+    ec_close();
+    return std::unexpected(Error{ErrorCode::kEtherCATError,
+                                 "Slaves failed to reach OPERATIONAL state"});
+  }
+
+  // Connect PDO struct pointers
+  for (std::size_t joint_idx = 1; joint_idx <= kNumJoints; ++joint_idx) {
+    const std::size_t i = joint_idx - 1;
+    in_somanet_[i] =
+        reinterpret_cast<InSomanet50t*>(ec_slave[joint_idx].inputs);
+    out_somanet_[i] =
+        reinterpret_cast<OutSomanet50t*>(ec_slave[joint_idx].outputs);
+  }
+  UpdateInSomanetSnapshotLocked();
+
+>>>>>>> 07805bd (Fix SOEM thread safety)
   // Verify slaves and read encoder / velocity scaling / rated torque per joint
   for (std::size_t joint_idx = 1; joint_idx <= kNumJoints; ++joint_idx) {
     if (std::strcmp(ec_slave[joint_idx].name, kExpectedSlaveName) != 0) {
@@ -353,6 +408,8 @@ std::expected<void, Error> ArmInterface::StartControlLoop(
   }
 
   control_loop_running_ = true;
+  shutdown_requested_ = false;
+  dynamic_sim_exited_ = false;
   pdo_exchange_count_.store(0);
 
   // Start the EtherCAT control loop
@@ -386,7 +443,7 @@ std::expected<void, Error> ArmInterface::StopControlLoop() {
 
   // Apply brakes on all joints before stopping
   {
-    std::lock_guard<std::mutex> lock(hw_state_mtx_);
+    std::scoped_lock lock(ecat_mtx_, hw_state_mtx_);
     for (std::size_t i = 0; i < kNumJoints; ++i) {
       Stop(out_somanet_, true, i);
       control_level_[i] = ControlLevel::kUndefined;
@@ -448,7 +505,7 @@ std::expected<void, Error> ArmInterface::SwitchControlModeImpl(
 
   // Stop all joints with brakes
   {
-    std::lock_guard<std::mutex> lock(hw_state_mtx_);
+    std::scoped_lock lock(ecat_mtx_, hw_state_mtx_);
     for (std::size_t i = 0; i < kNumJoints; ++i) {
       Stop(out_somanet_, true, i);
     }
@@ -479,7 +536,7 @@ std::expected<void, Error> ArmInterface::SwitchControlModeImpl(
       std::int16_t valid_offset_state = 2;
       int result;
       {
-        std::lock_guard<std::mutex> lock(hw_state_mtx_);
+        std::lock_guard<std::mutex> lock(ecat_mtx_);
         result = ec_SDOwrite(static_cast<std::uint16_t>(i + 1), 0x2009, 0x01,
                              false, sizeof(valid_offset_state),
                              &valid_offset_state, EC_TIMEOUTRXM);
@@ -523,7 +580,7 @@ std::expected<void, Error> ArmInterface::SwitchControlModeImpl(
 
   // Release brakes for certain modes (hand-guided waits for deadman in loop)
   {
-    std::lock_guard<std::mutex> lock(hw_state_mtx_);
+    std::scoped_lock lock(ecat_mtx_, hw_state_mtx_);
     for (std::size_t i = 0; i < kNumJoints; ++i) {
       if (control_level_[i] != ControlLevel::kUndefined &&
           control_level_[i] != ControlLevel::kQuickStop &&
@@ -909,6 +966,21 @@ ArmInterface::GetJointLimits() const {
 // Internal helpers
 // ============================================================================
 
+void ArmInterface::UpdateInSomanetSnapshotLocked() {
+  for (std::size_t joint_idx = 0; joint_idx < kNumJoints; ++joint_idx) {
+    if (in_somanet_[joint_idx] == nullptr) {
+      continue;
+    }
+
+    in_somanet_snapshot_[joint_idx].position_value =
+        in_somanet_[joint_idx]->PositionValue;
+    in_somanet_snapshot_[joint_idx].velocity_value =
+        in_somanet_[joint_idx]->VelocityValue;
+    in_somanet_snapshot_[joint_idx].torque_value =
+        in_somanet_[joint_idx]->TorqueValue;
+  }
+}
+
 void ArmInterface::WaitForGoodProcessData() {
   int wkc = -1;
   ec_send_processdata();
@@ -1096,46 +1168,50 @@ void ArmInterface::ApplyFrictionCompensation(std::size_t joint_idx) {
 void ArmInterface::EcatCheck(std::stop_token stop_token) {
   std::uint8_t currentgroup = 0;
 
-  while (!stop_token.stop_requested()) {
-    if (in_normal_op_mode_ &&
-        ((wkc_ < expected_wkc_) || ec_group[currentgroup].docheckstate)) {
-      ec_group[currentgroup].docheckstate = false;
-      ec_readstate();
-      for (int slave = 1; slave <= ec_slavecount; slave++) {
-        if ((ec_slave[slave].group == currentgroup) &&
-            (ec_slave[slave].state != EC_STATE_OPERATIONAL)) {
-          ec_group[currentgroup].docheckstate = true;
-          if (ec_slave[slave].state == (EC_STATE_SAFE_OP + EC_STATE_ERROR)) {
-            spdlog::error("Slave {} in SAFE_OP+ERROR, attempting ack", slave);
-            ec_slave[slave].state = (EC_STATE_SAFE_OP + EC_STATE_ACK);
-            ec_writestate(slave);
-          } else if (ec_slave[slave].state == EC_STATE_SAFE_OP) {
-            spdlog::warn("Slave {} in SAFE_OP, changing to OPERATIONAL",
-                         slave);
-            ec_slave[slave].state = EC_STATE_OPERATIONAL;
-            ec_writestate(slave);
-          } else if (ec_slave[slave].state > EC_STATE_NONE) {
-            if (ec_reconfig_slave(slave, kEcTimeoutMon)) {
-              ec_slave[slave].islost = false;
-              spdlog::info("Slave {} reconfigured", slave);
-            }
-          } else if (!ec_slave[slave].islost) {
-            ec_statecheck(slave, EC_STATE_OPERATIONAL, EC_TIMEOUTRET);
-            if (ec_slave[slave].state == EC_STATE_NONE) {
-              ec_slave[slave].islost = true;
-              spdlog::error("Slave {} lost", slave);
-            }
-          }
-
-          if (ec_slave[slave].islost) {
-            if (ec_slave[slave].state == EC_STATE_NONE) {
-              if (ec_recover_slave(slave, kEcTimeoutMon)) {
+  while (!stop_token.stop_requested() &&
+         !shutdown_requested_.load(std::memory_order_acquire)) {
+    {
+      std::lock_guard<std::mutex> lock(ecat_mtx_);
+      if (in_normal_op_mode_ &&
+          ((wkc_ < expected_wkc_) || ec_group[currentgroup].docheckstate)) {
+        ec_group[currentgroup].docheckstate = false;
+        ec_readstate();
+        for (int slave = 1; slave <= ec_slavecount; slave++) {
+          if ((ec_slave[slave].group == currentgroup) &&
+              (ec_slave[slave].state != EC_STATE_OPERATIONAL)) {
+            ec_group[currentgroup].docheckstate = true;
+            if (ec_slave[slave].state == (EC_STATE_SAFE_OP + EC_STATE_ERROR)) {
+              spdlog::error("Slave {} in SAFE_OP+ERROR, attempting ack", slave);
+              ec_slave[slave].state = (EC_STATE_SAFE_OP + EC_STATE_ACK);
+              ec_writestate(slave);
+            } else if (ec_slave[slave].state == EC_STATE_SAFE_OP) {
+              spdlog::warn("Slave {} in SAFE_OP, changing to OPERATIONAL",
+                           slave);
+              ec_slave[slave].state = EC_STATE_OPERATIONAL;
+              ec_writestate(slave);
+            } else if (ec_slave[slave].state > EC_STATE_NONE) {
+              if (ec_reconfig_slave(slave, kEcTimeoutMon)) {
                 ec_slave[slave].islost = false;
-                spdlog::info("Slave {} recovered", slave);
+                spdlog::info("Slave {} reconfigured", slave);
               }
-            } else {
-              ec_slave[slave].islost = false;
-              spdlog::info("Slave {} found", slave);
+            } else if (!ec_slave[slave].islost) {
+              ec_statecheck(slave, EC_STATE_OPERATIONAL, EC_TIMEOUTRET);
+              if (ec_slave[slave].state == EC_STATE_NONE) {
+                ec_slave[slave].islost = true;
+                spdlog::error("Slave {} lost", slave);
+              }
+            }
+
+            if (ec_slave[slave].islost) {
+              if (ec_slave[slave].state == EC_STATE_NONE) {
+                if (ec_recover_slave(slave, kEcTimeoutMon)) {
+                  ec_slave[slave].islost = false;
+                  spdlog::info("Slave {} recovered", slave);
+                }
+              } else {
+                ec_slave[slave].islost = false;
+                spdlog::info("Slave {} found", slave);
+              }
             }
           }
         }
@@ -1153,38 +1229,43 @@ void ArmInterface::ControlLoop(std::stop_token stop_token) {
   JointBoolArray first_iteration{};
   first_iteration.fill(true);
 
-  while (!stop_token.stop_requested() && !dynamic_sim_exited_) {
-    const bool estop = EStopEngaged();
-    if (estop) {
-      require_new_command_mode_ = true;
-      // count exchanges when e-stop path still has valid PDO (EStopEngaged already ran send/receive).
-      if (wkc_.load() >= expected_wkc_.load() &&
-          pdo_exchange_count_.load() < kMinPdoExchanges) {
-        pdo_exchange_count_.fetch_add(1);
+  while (!stop_token.stop_requested() &&
+         !shutdown_requested_.load(std::memory_order_acquire) &&
+         !dynamic_sim_exited_) {
+    bool estop = false;
+    bool halt_triggered = false;
+    bool skip_cycle = false;
+    {
+      std::scoped_lock lock(ecat_mtx_, hw_state_mtx_);
+      estop = EStopEngaged();
+      if (wkc_.load() >= expected_wkc_.load()) {
+        UpdateInSomanetSnapshotLocked();
+        if (pdo_exchange_count_.load() < kMinPdoExchanges) {
+          pdo_exchange_count_.fetch_add(1);
+        }
       }
-    } else if (pdo_exchange_count_.load() < kMinPdoExchanges) {
-      pdo_exchange_count_.fetch_add(1);
-    }
+      if (estop) {
+        require_new_command_mode_ = true;
+      }
 
-    // After enough PDO exchanges, update state readout so GetPositions() etc.
-    // return settled data (see synapticon read() MIN_PDO_EXCHANGES gate).
-    if (pdo_exchange_count_.load() >= kMinPdoExchanges) {
-      std::lock_guard<std::mutex> lock(hw_state_mtx_);
-      for (std::size_t joint_idx = 0; joint_idx < kNumJoints; ++joint_idx) {
-        state_velocities_[joint_idx] = VelocityValueToOutputShaftRadPerS(
-            in_somanet_[joint_idx]->VelocityValue,
-            si_velocity_units_[joint_idx].load(),
-            configured_reductions_[joint_idx].load(),
-            encoder_resolutions_[joint_idx].load());
-        state_positions_[joint_idx] = InputTicksToOutputShaftRad(
-            in_somanet_[joint_idx]->PositionValue,
-            position_reductions_[joint_idx].load(),
-            encoder_resolutions_[joint_idx].load(), joint_idx);
-        state_torques_[joint_idx] =
-            (in_somanet_[joint_idx]->TorqueValue / 1000.0f) *
-            rated_torques_[joint_idx].load() *
-            configured_reductions_[joint_idx].load();
-        state_accelerations_[joint_idx] = 0.0f;
+      // After enough PDO exchanges, update state readout from a copied PDO
+      // snapshot rather than directly from the live SOEM buffers.
+      if (pdo_exchange_count_.load() >= kMinPdoExchanges) {
+        for (std::size_t joint_idx = 0; joint_idx < kNumJoints; ++joint_idx) {
+          const auto& snapshot = in_somanet_snapshot_[joint_idx];
+          state_velocities_[joint_idx] = VelocityValueToOutputShaftRadPerS(
+              snapshot.velocity_value, si_velocity_units_[joint_idx].load(),
+              configured_reductions_[joint_idx].load(),
+              encoder_resolutions_[joint_idx].load());
+          state_positions_[joint_idx] = InputTicksToOutputShaftRad(
+              snapshot.position_value, position_reductions_[joint_idx].load(),
+              encoder_resolutions_[joint_idx].load(), joint_idx);
+          state_torques_[joint_idx] =
+              (snapshot.torque_value / 1000.0f) *
+              rated_torques_[joint_idx].load() *
+              configured_reductions_[joint_idx].load();
+          state_accelerations_[joint_idx] = 0.0f;
+        }
       }
     }
 
@@ -1198,94 +1279,105 @@ void ArmInterface::ControlLoop(std::stop_token stop_token) {
       std::lock_guard<std::mutex> lock(halt_mutex_);
       if (halt_condition_ && halt_condition_()) {
         spdlog::info("Halt condition triggered, stopping all joints");
-        std::lock_guard<std::mutex> hw_lock(hw_state_mtx_);
-        for (std::size_t i = 0; i < kNumJoints; ++i) {
-          Stop(out_somanet_, true, i);
+        {
+          std::scoped_lock hw_lock(ecat_mtx_, hw_state_mtx_);
+          for (std::size_t i = 0; i < kNumJoints; ++i) {
+            Stop(out_somanet_, true, i);
+          }
         }
         halt_condition_ = nullptr;
-        osal_usleep(kCyclicLoopSleepUs);
-        continue;
+        halt_triggered = true;
       }
     }
 
+    if (halt_triggered) {
+      osal_usleep(kCyclicLoopSleepUs);
+      continue;
+    }
+
     {
-      std::lock_guard<std::mutex> lock(hw_state_mtx_);
+      std::scoped_lock lock(ecat_mtx_, hw_state_mtx_);
 
       // Read GPIO via SDO
       auto wr_roll_gpio = ReadSDOValue(
           static_cast<std::uint16_t>(kWristRollIdx + 1), 0x60FD, 0x00);
       if (!wr_roll_gpio) {
         spdlog::error("ReadSDOValue() failed for GPIO");
-        osal_usleep(kCyclicLoopSleepUs);
-        continue;
-      }
-      const std::int32_t lips_spring_position =
-          in_somanet_[kSpringAdjustIdx]->PositionValue;
-
-      hw_function_enable_ =
-          static_cast<float>((*wr_roll_gpio & (1 << 16)) >> 16);
-      hw_decomp_button_ =
-          static_cast<float>((*wr_roll_gpio & (1 << 17)) >> 17);
-      hw_comp_button_ =
-          static_cast<float>((*wr_roll_gpio & (1 << 18)) >> 18);
-      const bool admittance_button_pressed = (*wr_roll_gpio & (1 << 19)) >> 19;
-
-      const bool deadman_pressed = hw_function_enable_.load() > 0.5f;
-      static bool prev_deadman_pressed = false;
-
-      // Check if deadman pressed initially (stuck button safety)
-      if (first_iteration[0] && deadman_pressed) {
-        first_iteration[0] = false;
-        allow_mode_change_ = false;
-        prev_deadman_pressed = true;
-        spdlog::error(
-            "Function enable pressed at startup - blocking hand_guided");
-        osal_usleep(kCyclicLoopSleepUs);
-        continue;
-      }
-      first_iteration[0] = false;
-
-      if (require_new_command_mode_) {
-        allow_mode_change_ = true;
-        osal_usleep(kCyclicLoopSleepUs);
-        continue;
-      }
-
-      // Update payload mass from spring potentiometer
-      float payload_mass_kg = SpringPotTicksToPayloadKg(lips_spring_position);
-      if (payload_mass_kg > 0) {
-        dynamic_sim_state_->input.payload_mass = payload_mass_kg;
+        skip_cycle = true;
       } else {
-        dynamic_sim_state_->input.payload_mass = 0.0f;
-      }
+        const std::int32_t lips_spring_position =
+            in_somanet_[kSpringAdjustIdx]->PositionValue;
 
-      // Deadman mode change state tracking
-      if (control_level_[0] == ControlLevel::kHandGuided &&
-          deadman_pressed && !prev_deadman_pressed) {
-        allow_mode_change_ = false;
-        prev_deadman_pressed = true;
-      } else if (prev_deadman_pressed && !deadman_pressed) {
-        allow_mode_change_ = true;
-        prev_deadman_pressed = false;
-      }
+        hw_function_enable_ =
+            static_cast<float>((*wr_roll_gpio & (1 << 16)) >> 16);
+        hw_decomp_button_ =
+            static_cast<float>((*wr_roll_gpio & (1 << 17)) >> 17);
+        hw_comp_button_ =
+            static_cast<float>((*wr_roll_gpio & (1 << 18)) >> 18);
+        const bool admittance_button_pressed = (*wr_roll_gpio & (1 << 19)) >> 19;
 
-      // Run state machine for each joint
-      for (std::size_t joint_idx = 0; joint_idx < kNumJoints; ++joint_idx) {
-        if (first_iteration.at(joint_idx)) {
-          out_somanet_[joint_idx]->OpMode = kProfileTorqueMode;
-          first_iteration.at(joint_idx) = false;
+        const bool deadman_pressed = hw_function_enable_.load() > 0.5f;
+        static bool prev_deadman_pressed = false;
+
+        // Check if deadman pressed initially (stuck button safety)
+        if (first_iteration[0] && deadman_pressed) {
+          first_iteration[0] = false;
+          allow_mode_change_ = false;
+          prev_deadman_pressed = true;
+          spdlog::error(
+              "Function enable pressed at startup - blocking hand_guided");
+          skip_cycle = true;
+        } else {
+          first_iteration[0] = false;
+
+          if (require_new_command_mode_) {
+            allow_mode_change_ = true;
+            skip_cycle = true;
+          } else {
+            // Update payload mass from spring potentiometer
+            float payload_mass_kg =
+                SpringPotTicksToPayloadKg(lips_spring_position);
+            if (payload_mass_kg > 0) {
+              dynamic_sim_state_->input.payload_mass = payload_mass_kg;
+            } else {
+              dynamic_sim_state_->input.payload_mass = 0.0f;
+            }
+
+            // Deadman mode change state tracking
+            if (control_level_[0] == ControlLevel::kHandGuided &&
+                deadman_pressed && !prev_deadman_pressed) {
+              allow_mode_change_ = false;
+              prev_deadman_pressed = true;
+            } else if (prev_deadman_pressed && !deadman_pressed) {
+              allow_mode_change_ = true;
+              prev_deadman_pressed = false;
+            }
+
+            // Run state machine for each joint
+            for (std::size_t joint_idx = 0; joint_idx < kNumJoints; ++joint_idx) {
+              if (first_iteration.at(joint_idx)) {
+                out_somanet_[joint_idx]->OpMode = kProfileTorqueMode;
+                first_iteration.at(joint_idx) = false;
+              }
+
+              // Gravity compensation
+              ApplyGravComp(joint_idx, in_somanet_[joint_idx],
+                            out_somanet_[joint_idx]);
+
+              StateMachineStep(joint_idx, lips_spring_position,
+                               admittance_button_pressed, deadman_pressed);
+
+              StatusWordErrorLogging(joint_idx);
+            }
+          }
         }
-
-        // Gravity compensation
-        ApplyGravComp(joint_idx, in_somanet_[joint_idx],
-                      out_somanet_[joint_idx]);
-
-        StateMachineStep(joint_idx, lips_spring_position,
-                         admittance_button_pressed, deadman_pressed);
-
-        StatusWordErrorLogging(joint_idx);
       }
     }  // mutex scope
+
+    if (skip_cycle) {
+      osal_usleep(kCyclicLoopSleepUs);
+      continue;
+    }
 
     osal_usleep(kCyclicLoopSleepUs);
   }

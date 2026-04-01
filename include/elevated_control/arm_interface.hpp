@@ -5,6 +5,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <deque>
 #include <expected>
 #include <functional>
@@ -33,6 +34,13 @@ struct JointLimitsInfo {
   float min_position;
   float max_position;
   bool has_limits;
+};
+
+// A copy of the PDO fields that are read outside the EtherCAT-owned path.
+struct InSomanetSnapshot {
+  std::int32_t position_value = 0;
+  std::int32_t velocity_value = 0;
+  std::int16_t torque_value = 0;
 };
 
 class ArmInterface {
@@ -136,6 +144,9 @@ class ArmInterface {
   // EtherCAT cyclic control loop (runs in control_thread_)
   void ControlLoop(std::stop_token stop_token);
 
+  // Copy PDO input data into thread-safe snapshots while the EtherCAT lock is held.
+  void UpdateInSomanetSnapshotLocked();
+
   // Per-joint Somanet state machine step
   void StateMachineStep(std::size_t joint_idx,
                         std::int32_t lips_spring_position,
@@ -189,6 +200,7 @@ class ArmInterface {
   std::atomic<bool> mode_switch_in_progress_{false};
   std::atomic<bool> allow_mode_change_{true};
   std::atomic<bool> dynamic_sim_exited_{false};
+  std::atomic<bool> shutdown_requested_{false};
 
   // Threads
   std::jthread control_thread_;
@@ -197,7 +209,9 @@ class ArmInterface {
 
   // EtherCAT
   char io_map_[4096]{};
+  std::mutex ecat_mtx_;
   JointArray<InSomanet50t*> in_somanet_{};
+  JointArray<InSomanetSnapshot> in_somanet_snapshot_{};
   JointArray<OutSomanet50t*> out_somanet_{};
   std::atomic<int> wkc_{0};
   std::atomic<int> expected_wkc_{0};
