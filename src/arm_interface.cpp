@@ -211,40 +211,6 @@ std::expected<void, Error> ArmInterface::Initialize() {
   WaitForGoodProcessData();
   HandleStartupFaults();
 
-  // Request operational state for all slaves
-  expected_wkc_ = (ec_group[0].outputsWKC * 2) + ec_group[0].inputsWKC;
-  for (int slave_id = 0; slave_id < ec_slavecount; ++slave_id) {
-    ec_slave[slave_id].state = EC_STATE_OPERATIONAL;
-  }
-  ec_send_processdata();
-  ec_receive_processdata(EC_TIMEOUTRET);
-  ec_writestate(0);
-
-  // Wait for all slaves to reach OP state
-  uint16 actual_state;
-  std::size_t chk = 200;
-  do {
-    ec_send_processdata();
-    ec_receive_processdata(EC_TIMEOUTRET);
-    ec_readstate();
-    actual_state = ec_statecheck(0, EC_STATE_OPERATIONAL, 50000);
-  } while (chk-- && (actual_state != EC_STATE_OPERATIONAL));
-
-  if (chk == 0) {
-    ec_close();
-    return std::unexpected(Error{ErrorCode::kEtherCATError,
-                                 "Slaves failed to reach OPERATIONAL state"});
-  }
-
-  // Connect PDO struct pointers
-  for (std::size_t joint_idx = 1; joint_idx <= kNumJoints; ++joint_idx) {
-    const std::size_t i = joint_idx - 1;
-    in_somanet_[i] =
-        reinterpret_cast<InSomanet50t*>(ec_slave[joint_idx].inputs);
-    out_somanet_[i] =
-        reinterpret_cast<OutSomanet50t*>(ec_slave[joint_idx].outputs);
-  }
-
   // Verify slaves and read encoder / velocity scaling / rated torque per joint
   for (std::size_t joint_idx = 1; joint_idx <= kNumJoints; ++joint_idx) {
     if (std::strcmp(ec_slave[joint_idx].name, kExpectedSlaveName) != 0) {
@@ -320,6 +286,41 @@ std::expected<void, Error> ArmInterface::Initialize() {
             joint_idx - 1, configured_reduction);
       }
     }
+  }
+
+  // Request operational state for all slaves after startup SDO reads to avoid
+  // disrupting PDO exchange during initialization.
+  expected_wkc_ = (ec_group[0].outputsWKC * 2) + ec_group[0].inputsWKC;
+  for (int slave_id = 0; slave_id < ec_slavecount; ++slave_id) {
+    ec_slave[slave_id].state = EC_STATE_OPERATIONAL;
+  }
+  ec_send_processdata();
+  ec_receive_processdata(EC_TIMEOUTRET);
+  ec_writestate(0);
+
+  // Wait for all slaves to reach OP state.
+  uint16 actual_state;
+  std::size_t chk = 200;
+  do {
+    ec_send_processdata();
+    ec_receive_processdata(EC_TIMEOUTRET);
+    ec_readstate();
+    actual_state = ec_statecheck(0, EC_STATE_OPERATIONAL, 50000);
+  } while (chk-- && (actual_state != EC_STATE_OPERATIONAL));
+
+  if (chk == 0) {
+    ec_close();
+    return std::unexpected(Error{ErrorCode::kEtherCATError,
+                                 "Slaves failed to reach OPERATIONAL state"});
+  }
+
+  // Connect PDO struct pointers after OP is established.
+  for (std::size_t joint_idx = 1; joint_idx <= kNumJoints; ++joint_idx) {
+    const std::size_t i = joint_idx - 1;
+    in_somanet_[i] =
+        reinterpret_cast<InSomanet50t*>(ec_slave[joint_idx].inputs);
+    out_somanet_[i] =
+        reinterpret_cast<OutSomanet50t*>(ec_slave[joint_idx].outputs);
   }
 
   // Initialize joint admittances (wrist roll only)
