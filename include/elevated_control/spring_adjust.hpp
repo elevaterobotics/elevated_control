@@ -56,9 +56,9 @@ inline std::optional<float> LoadSpringAdjustSetpoint(
 // true). The next spring-adjust session requires a new `SetSpringSetpoint`.
 inline void CompleteSpringAdjustSession(
     std::atomic<bool>& has_spring_setpoint,
-    ControlLevel& joint_control_level) {
+    ControlMode& joint_control_mode) {
   has_spring_setpoint.store(false, std::memory_order_release);
-  joint_control_level = ControlLevel::kQuickStop;
+  joint_control_mode = ControlMode::kQuickStop;
 }
 
 }  // namespace elevated_control

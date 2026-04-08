@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-#include "elevated_control/constants.hpp"
+#include "elevated_control/arm_constants.hpp"
 
 namespace elevated_control {
 

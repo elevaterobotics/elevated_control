@@ -2,9 +2,9 @@
 
 #pragma once
 
-#include <array>
 #include <cstdint>
 #include <optional>
+#include <string>
 
 #include <spdlog/spdlog.h>
 
@@ -14,18 +14,15 @@
 
 namespace elevated_control {
 
-// Bring the robot to a stop, optionally applying brakes.
-// If brakes are applied, the EtherCAT state machine transitions to
-// "Switch on disabled".
-inline void Stop(std::array<OutSomanet50t*, kNumJoints>& out_somanet,
-                 bool apply_brake, std::size_t joint_idx) {
-  out_somanet[joint_idx]->TargetTorque = 0;
-  out_somanet[joint_idx]->TorqueOffset = 0;
-  out_somanet[joint_idx]->TargetVelocity = 0;
-  out_somanet[joint_idx]->VelocityOffset = 0;
-  out_somanet[joint_idx]->OpMode = kCyclicVelocityMode;
+// Bring a single joint to a stop, optionally applying brakes.
+inline void Stop(OutSomanet50t* out, bool apply_brake) {
+  out->TargetTorque = 0;
+  out->TorqueOffset = 0;
+  out->TargetVelocity = 0;
+  out->VelocityOffset = 0;
+  out->OpMode = kCyclicVelocityMode;
   if (apply_brake) {
-    out_somanet[joint_idx]->Controlword = 0;
+    out->Controlword = 0;
   }
 }
 
@@ -34,7 +31,6 @@ std::optional<std::int32_t> ReadSDOValue(std::uint16_t slave,
                                          std::uint16_t index,
                                          std::uint8_t subindex);
 
-// Read a string-typed SDO object (e.g. 0x100A Software Version).
 std::optional<std::string> ReadSDOString(std::uint16_t slave,
                                          std::uint16_t index,
                                          std::uint8_t subindex);
@@ -51,49 +47,38 @@ inline void HandleFault(const InSomanet50t* in_somanet,
       fault_code.value_or(-1));
 }
 
-// Handle "Switch on disabled" state: stop and brake, manage pitch dial logic
-inline void HandleShutdown(std::array<OutSomanet50t*, kNumJoints>& out_somanet,
-                           std::size_t joint_idx,
-                           const JointControlLevelArray& control_level,
+inline void HandleShutdown(OutSomanet50t* out_somanet,
+                           ControlMode control_mode,
                            bool mode_switch_in_progress,
                            bool hold_in_shutdown) {
-  Stop(out_somanet, true, joint_idx);
+  Stop(out_somanet, true);
 
   if (!hold_in_shutdown &&
-      (control_level[joint_idx] != ControlLevel::kQuickStop) &&
-      (control_level[joint_idx] != ControlLevel::kUndefined) &&
+      (control_mode != ControlMode::kQuickStop) &&
+      (control_mode != ControlMode::kUndefined) &&
       !mode_switch_in_progress) {
-    // Request the CiA402 "shutdown" transition toward "Ready to switch on".
-    out_somanet[joint_idx]->Controlword = 0b00000110;
+    out_somanet->Controlword = 0b00000110;
   }
 }
 
-inline void HandleSwitchOn(std::array<OutSomanet50t*, kNumJoints>& out_somanet,
-                           std::size_t joint_idx,
+inline void HandleSwitchOn(OutSomanet50t* out_somanet,
                            bool hold_in_shutdown) {
   if (hold_in_shutdown) {
-    Stop(out_somanet, true, joint_idx);
+    Stop(out_somanet, true);
     return;
   }
-  // Request the CiA402 "switch on" transition toward "Switched on".
-  out_somanet[joint_idx]->Controlword = 0b00000111;
+  out_somanet->Controlword = 0b00000111;
 }
 
-inline void HandleEnableOperation(
-    std::array<OutSomanet50t*, kNumJoints>& out_somanet,
-    std::size_t joint_idx, bool mode_switch_in_progress,
-    ControlLevel control_level, bool deadman_pressed, bool hold_in_shutdown) {
+inline void HandleEnableOperation(OutSomanet50t* out_somanet,
+                                  bool mode_switch_in_progress,
+                                  bool hold_in_shutdown) {
   if (hold_in_shutdown) {
-    Stop(out_somanet, true, joint_idx);
+    Stop(out_somanet, true);
     return;
   }
   if (!mode_switch_in_progress) {
-    if (control_level == ControlLevel::kHandGuided && !deadman_pressed) {
-      // Operation not enabled yet
-      out_somanet[joint_idx]->Controlword = 0b00000111;
-    } else {
-      out_somanet[joint_idx]->Controlword = kNormalOpBrakesOff;
-    }
+    out_somanet->Controlword = kNormalOpBrakesOff;
   }
 }
 

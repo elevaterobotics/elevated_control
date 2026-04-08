@@ -6,7 +6,7 @@
 #include <limits>
 #include <thread>
 
-#include "elevated_control/types.hpp"
+#include "elevated_control/arm_types.hpp"
 
 int main() {
   const fs::path dir = ExampleConfigDir();

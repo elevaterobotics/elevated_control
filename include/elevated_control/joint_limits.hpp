@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <optional>
+#include <span>
 #include <utility>
 #include <spdlog/spdlog.h>
 
@@ -17,10 +18,11 @@
 namespace elevated_control {
 
 inline std::optional<std::pair<bool, float>> JointLimitCmdClamp(
-    const std::size_t joint_idx, const ControlLevel control_level,
-    const float current_position, const JointBoolArray& has_position_limits,
-    const JointFloatArray& min_position_limits,
-    const JointFloatArray& max_position_limits,
+    const std::size_t joint_idx, const ControlMode control_mode,
+    const float current_position, std::span<const bool> has_position_limits,
+    std::span<const float> min_position_limits,
+    std::span<const float> max_position_limits,
+    std::span<const float> max_brake_torques,
     const float requested_command) {
   if (!has_position_limits[joint_idx] ||
       !std::isfinite(min_position_limits[joint_idx]) ||
@@ -31,18 +33,14 @@ inline std::optional<std::pair<bool, float>> JointLimitCmdClamp(
   float output_command = requested_command;
   bool near_joint_limit = false;
 
-  if (control_level == ControlLevel::kVelocity) {
-    // Velocity commands use output-shaft rad/s.
+  if (control_mode == ControlMode::kVelocity) {
     if (current_position <
         min_position_limits[joint_idx] + kPositionLimitBuffer) {
       if (requested_command > 0.0f) {
-        // A positive velocity is OK because it moves away from the limit
         output_command = requested_command;
       } else if (current_position < min_position_limits[joint_idx]) {
-        // Stop immediately if already past the limit
         output_command = 0.0f;
       } else {
-        // Linearly ramp the blocked velocity component down within the position limit buffer.
         const float scale =
             (current_position - min_position_limits[joint_idx]) /
             kPositionLimitBuffer;
@@ -52,22 +50,18 @@ inline std::optional<std::pair<bool, float>> JointLimitCmdClamp(
     } else if (current_position >
                max_position_limits[joint_idx] - kPositionLimitBuffer) {
       if (requested_command < 0.0f) {
-        // A negative velocity is OK because it moves away from the limit
         output_command = requested_command;
       } else if (current_position > max_position_limits[joint_idx]) {
-        // Stop immediately if already past the limit
         output_command = 0.0f;
       } else {
-        // Linearly ramp the blocked velocity component down within the position limit buffer.
         const float scale =
             (max_position_limits[joint_idx] - current_position) /
             kPositionLimitBuffer;
         output_command = requested_command * std::clamp(scale, 0.0f, 1.0f);
       }
-      // else, don't change output_command
       near_joint_limit = true;
     }
-  } else if (control_level == ControlLevel::kPosition) {
+  } else if (control_mode == ControlMode::kPosition) {
     if (current_position <
         min_position_limits[joint_idx] + kPositionLimitBuffer) {
       output_command = min_position_limits[joint_idx] + kPositionLimitBuffer;
@@ -77,8 +71,7 @@ inline std::optional<std::pair<bool, float>> JointLimitCmdClamp(
       output_command = max_position_limits[joint_idx] - kPositionLimitBuffer;
       near_joint_limit = true;
     }
-  } else if (control_level == ControlLevel::kTorque ||
-             control_level == ControlLevel::kHandGuided) {
+  } else if (control_mode == ControlMode::kTorque) {
     float distance_to_upper =
         max_position_limits[joint_idx] - kPositionLimitBuffer -
         current_position;
@@ -88,11 +81,11 @@ inline std::optional<std::pair<bool, float>> JointLimitCmdClamp(
 
     if (current_position <
         min_position_limits[joint_idx] + kPositionLimitBuffer) {
-      output_command += kMaxJointLimitBrakeTorque[joint_idx];
+      output_command += max_brake_torques[joint_idx];
       near_joint_limit = true;
     } else if (current_position >
                max_position_limits[joint_idx] - kPositionLimitBuffer) {
-      output_command -= kMaxJointLimitBrakeTorque[joint_idx];
+      output_command -= max_brake_torques[joint_idx];
       near_joint_limit = true;
     } else if (distance_to_upper < distance_to_lower) {
       if (distance_to_upper < kJointLimitTorqueBrakeDistance) {
@@ -100,7 +93,7 @@ inline std::optional<std::pair<bool, float>> JointLimitCmdClamp(
             (kJointLimitTorqueBrakeDistance - distance_to_upper) /
             kJointLimitTorqueBrakeDistance;
         float brake_torque =
-            torque_fraction * kMaxJointLimitBrakeTorque[joint_idx];
+            torque_fraction * max_brake_torques[joint_idx];
         output_command -= brake_torque;
         near_joint_limit = true;
       }
@@ -110,13 +103,13 @@ inline std::optional<std::pair<bool, float>> JointLimitCmdClamp(
             (kJointLimitTorqueBrakeDistance - distance_to_lower) /
             kJointLimitTorqueBrakeDistance;
         float brake_torque =
-            torque_fraction * kMaxJointLimitBrakeTorque[joint_idx];
+            torque_fraction * max_brake_torques[joint_idx];
         output_command += brake_torque;
         near_joint_limit = true;
       }
     }
   } else {
-    spdlog::error("JointLimitCmdClamp: invalid control level");
+    spdlog::error("JointLimitCmdClamp: invalid control mode");
     return std::nullopt;
   }
 
@@ -126,11 +119,13 @@ inline std::optional<std::pair<bool, float>> JointLimitCmdClamp(
 // `requested_velocity` is output-shaft rad/s before conversion to drive units.
 inline void SetVelocityWithLimits(
     const std::size_t joint_idx, const InSomanet50t* in_somanet,
-    const JointBoolArray& has_position_limits,
-    const JointFloatArray& min_position_limits,
-    const JointFloatArray& max_position_limits,
+    std::span<const bool> has_position_limits,
+    std::span<const float> min_position_limits,
+    std::span<const float> max_position_limits,
+    std::span<const float> max_brake_torques,
     const float mechanical_reduction, const std::uint32_t encoder_resolution,
     const float requested_velocity, const std::int32_t si_velocity_unit,
+    const std::atomic<float>& wrap_value,
     VelocityFilter& velocity_filter,
     OutSomanet50t* out_somanet) {
   float output_velocity = requested_velocity;
@@ -139,11 +134,11 @@ inline void SetVelocityWithLimits(
       std::isfinite(max_position_limits[joint_idx])) {
     float current_position = InputTicksToOutputShaftRad(
         in_somanet->PositionValue, mechanical_reduction, encoder_resolution,
-        joint_idx);
+        wrap_value);
     auto result = JointLimitCmdClamp(
-        joint_idx, ControlLevel::kVelocity, current_position,
+        joint_idx, ControlMode::kVelocity, current_position,
         has_position_limits, min_position_limits, max_position_limits,
-        output_velocity);
+        max_brake_torques, output_velocity);
 
     if (result.has_value()) {
       output_velocity = result.value().second;

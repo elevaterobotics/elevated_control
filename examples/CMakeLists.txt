@@ -33,6 +33,9 @@ target_link_libraries(spring_adjust PRIVATE ${PROJECT_NAME})
 target_include_directories(spring_adjust PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR})
 
+add_executable(single_motor_test single_motor_test.cpp)
+target_link_libraries(single_motor_test PRIVATE ${PROJECT_NAME})
+
 set(EXAMPLE_CONFIG_YAMLS
   ${CMAKE_CURRENT_SOURCE_DIR}/joint_limits.yaml
   ${CMAKE_CURRENT_SOURCE_DIR}/elevate_config.yaml

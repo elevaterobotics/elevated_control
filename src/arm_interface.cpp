@@ -14,15 +14,9 @@
 #include <cstring>
 #include <limits>
 
-#include <net/if.h>
-#include <sys/ioctl.h>
-#include <sys/socket.h>
-#include <unistd.h>
-
 #include "elevated_control/joint_limits.hpp"
 #include "elevated_control/state_machine.hpp"
 #include "elevated_control/unit_conversions.hpp"
-#include "elevated_control/dial_normalization.hpp"
 
 using namespace std::chrono_literals;
 
@@ -30,25 +24,12 @@ namespace elevated_control {
 
 namespace {
 
-constexpr int kEcTimeoutMon = 500;
-constexpr char kExpectedSlaveName[] = "SOMANET";
-constexpr std::chrono::seconds kProcessDataWarnThrottleInterval{2};
-
-bool InterfaceExists(const char* ifname) {
-  int sock = socket(AF_INET, SOCK_DGRAM, 0);
-  if (sock < 0) return false;
-
-  struct ifreq ifr;
-  std::strncpy(ifr.ifr_name, ifname, IFNAMSIZ - 1);
-  ifr.ifr_name[IFNAMSIZ - 1] = '\0';
-
-  bool exists = (ioctl(sock, SIOCGIFINDEX, &ifr) == 0);
-  close(sock);
-  return exists;
+JointBoolArray HasPositionLimitsToArray(const std::vector<bool>& v) {
+  JointBoolArray arr{};
+  for (std::size_t i = 0; i < kNumJoints && i < v.size(); ++i) arr[i] = v[i];
+  return arr;
 }
 
-/// Per-joint modes for Set* streaming: kinematic mode on all joints except
-/// spring_adjust, which stays in kSpringAdjust (SetSpringSetpoint).
 JointControlLevelArray MakeStreamingModes(ControlLevel mode) {
   JointControlLevelArray m;
   m.fill(mode);
@@ -58,85 +39,20 @@ JointControlLevelArray MakeStreamingModes(ControlLevel mode) {
 
 }  // namespace
 
-// SDO read (defined in state_machine.hpp, implemented here)
-std::optional<std::int32_t> ReadSDOValue(std::uint16_t slave,
-                                         std::uint16_t index,
-                                         std::uint8_t subindex) {
-  std::int32_t value_holder;
-  int object_size = sizeof(value_holder);
-  int result = ec_SDOread(slave, index, subindex, FALSE, &object_size,
-                          &value_holder, EC_TIMEOUTRXM);
-  if (result <= 0) return std::nullopt;
-  return value_holder;
-}
-
-// SDO string read (defined in state_machine.hpp, implemented here)
-std::optional<std::string> ReadSDOString(std::uint16_t slave,
-                                         std::uint16_t index,
-                                         std::uint8_t subindex) {
-  char buf[256] = {};
-  int object_size = sizeof(buf) - 1;
-  int result = ec_SDOread(slave, index, subindex, FALSE, &object_size,
-                          buf, EC_TIMEOUTRXM);
-  if (result <= 0) return std::nullopt;
-  buf[object_size] = '\0';
-  return std::string(buf, static_cast<std::size_t>(object_size));
-}
-
-constexpr bool kUseDriveReportedMechanicalReduction = false;
-
-std::optional<float> ReadDriveMechanicalReduction(std::uint16_t slave_idx) {
-  const auto gear_ratio_num = ReadSDOValue(slave_idx, 0x6091, 0x01);
-  const auto gear_ratio_den = ReadSDOValue(slave_idx, 0x6091, 0x02);
-  if (!gear_ratio_num || !gear_ratio_den) {
-    return std::nullopt;
-  }
-  if ((*gear_ratio_num <= 0) || (*gear_ratio_den <= 0)) {
-    return std::nullopt;
-  }
-  return static_cast<float>(*gear_ratio_num) /
-         static_cast<float>(*gear_ratio_den);
-}
-
 // ============================================================================
 // Construction / Destruction
 // ============================================================================
 
 ArmInterface::ArmInterface(const Config& config)
-    : config_(config),
+    : SynapticonBase(config),
+      arm_config_(config),
       dynamic_sim_state_(std::make_shared<DynamicSimState>()),
       dynamic_simulator_(dynamic_sim_state_) {}
 
 ArmInterface::~ArmInterface() {
-  shutdown_requested_ = true;
-  in_normal_op_mode_ = false;
-
-  if (ecat_error_thread_.joinable()) {
-    ecat_error_thread_.request_stop();
-  }
-
-  if (control_loop_running_) {
-    auto result = StopControlLoop();
-    if (!result &&
-        result.error().code != ErrorCode::kControlLoopNotRunning) {
-      spdlog::error("StopControlLoop failed in destructor: {}",
-                    result.error().message);
-    }
-  }
-
-  if (ecat_error_thread_.joinable()) {
-    ecat_error_thread_.join();
-  }
-
-  if (initialized_) {
-    {
-      std::lock_guard<std::mutex> lock(ecat_mtx_);
-      ec_slave[0].state = EC_STATE_INIT;
-      ec_writestate(0);
-    }
-    std::this_thread::sleep_for(1000ms);
-    std::lock_guard<std::mutex> lock(ecat_mtx_);
-    ec_close();
+  if (dynamic_sim_thread_.joinable()) {
+    dynamic_sim_thread_.request_stop();
+    dynamic_sim_thread_.join();
   }
 }
 
@@ -145,65 +61,33 @@ ArmInterface::~ArmInterface() {
 // ============================================================================
 
 std::expected<void, Error> ArmInterface::Initialize() {
-  if (initialized_) {
-    return std::unexpected(
-        Error{ErrorCode::kAlreadyInitialized, "Already initialized"});
-  }
+  // Base EtherCAT initialization
+  auto result = SynapticonBase::Initialize();
+  if (!result) return result;
 
-  // Initialize command buffers
-  shutdown_requested_ = false;
+  // Initialize arm-specific state
   control_level_.fill(ControlLevel::kUndefined);
-  state_positions_.fill(std::numeric_limits<float>::quiet_NaN());
-  state_velocities_.fill(std::numeric_limits<float>::quiet_NaN());
-  state_torques_.fill(std::numeric_limits<float>::quiet_NaN());
-  state_accelerations_.fill(std::numeric_limits<float>::quiet_NaN());
 
-  configured_reductions_.resize(kNumJoints);
-  position_reductions_.resize(kNumJoints);
-  si_velocity_units_.resize(kNumJoints);
-  encoder_resolutions_.resize(kNumJoints);
-  rated_torques_.resize(kNumJoints);
-  for (std::size_t i = 0; i < kNumJoints; ++i) {
-    configured_reductions_[i] = 1.0f;
-    position_reductions_[i] = 1.0f;
-    si_velocity_units_[i] = 0;
-    encoder_resolutions_[i] = 1;
-    rated_torques_[i] = 1.0f;
-  }
-
-  threadsafe_commands_positions_.resize(kNumJoints);
-  threadsafe_commands_velocities_.resize(kNumJoints);
-  threadsafe_commands_efforts_.resize(kNumJoints);
-  for (std::size_t i = 0; i < kNumJoints; ++i) {
-    threadsafe_commands_positions_[i] =
-        std::numeric_limits<float>::quiet_NaN();
-    threadsafe_commands_velocities_[i] = 0.0f;
-    threadsafe_commands_efforts_[i] =
-        std::numeric_limits<float>::quiet_NaN();
-  }
-
-  // Initialize dynamic sim state (use kNumJoints entries for the stub)
   InitializeDynamicSimState(dynamic_sim_state_, kNumJoints);
 
   // Parse joint limits
-  if (!config_.joint_limits_yaml.empty()) {
-    auto joint_limits_config = ParseJointLimits(config_.joint_limits_yaml);
+  if (!base_config_.joint_limits_yaml.empty()) {
+    auto joint_limits_config = ParseJointLimits(base_config_.joint_limits_yaml);
     if (!ValidateJointLimits(joint_limits_config)) {
       return std::unexpected(
           Error{ErrorCode::kInvalidArgument, "Invalid joint limits config"});
     }
-    has_position_limits_ = std::move(joint_limits_config.has_position_limits);
-    min_position_limits_ = std::move(joint_limits_config.min_position_limits);
-    max_position_limits_ = std::move(joint_limits_config.max_position_limits);
-  } else {
-    has_position_limits_.fill(false);
-    min_position_limits_.fill(-std::numeric_limits<float>::max());
-    max_position_limits_.fill(std::numeric_limits<float>::max());
+    for (std::size_t i = 0; i < kNumJoints; ++i) {
+      has_position_limits_[i] = joint_limits_config.has_position_limits[i];
+      min_position_limits_[i] = joint_limits_config.min_position_limits[i];
+      max_position_limits_[i] = joint_limits_config.max_position_limits[i];
+      max_brake_torques_[i] = kMaxJointLimitBrakeTorque[i];
+    }
   }
 
   // Parse elevate config
-  if (!config_.elevate_config_yaml.empty()) {
-    elevate_config_ = ParseElevateConfig(config_.elevate_config_yaml);
+  if (!arm_config_.elevate_config_yaml.empty()) {
+    elevate_config_ = ParseElevateConfig(arm_config_.elevate_config_yaml);
     if (!ValidateButtonConfig(elevate_config_.button_config) ||
         !ValidateSpringSetpoints(elevate_config_.spring_setpoints) ||
         !ValidateTorqueSignsConfig(elevate_config_.torque_sign) ||
@@ -214,145 +98,6 @@ std::expected<void, Error> ArmInterface::Initialize() {
     }
   }
 
-  // Check network interface
-  if (!InterfaceExists(config_.network_interface.c_str())) {
-    return std::unexpected(Error{
-        ErrorCode::kEtherCATError,
-        "Network interface '" + config_.network_interface + "' does not exist"});
-  }
-
-  // EtherCAT initialization
-  int ec_init_status = ec_init(config_.network_interface.c_str());
-  if (ec_init_status <= 0) {
-    ec_close();
-    return std::unexpected(Error{ErrorCode::kEtherCATError,
-                                 "EtherCAT init failed on " +
-                                     config_.network_interface});
-  }
-
-  if (ec_config_init(false) <= 0) {
-    ec_close();
-    return std::unexpected(
-        Error{ErrorCode::kEtherCATError, "No EtherCAT slaves found"});
-  }
-
-  ec_config_map(&io_map_);
-  ec_configdc();
-  WaitForGoodProcessData();
-  HandleStartupFaults();
-
-  // Verify slaves and read encoder / velocity scaling / rated torque per joint
-  for (std::size_t joint_idx = 1; joint_idx <= kNumJoints; ++joint_idx) {
-    if (std::strcmp(ec_slave[joint_idx].name, kExpectedSlaveName) != 0) {
-      ec_close();
-      return std::unexpected(
-          Error{ErrorCode::kEtherCATError,
-                std::string("Expected slave SOMANET at position ") +
-                    std::to_string(joint_idx) + " but got '" +
-                    ec_slave[joint_idx].name + "'"});
-    }
-
-    std::uint8_t encoder_source;
-    int size = sizeof(encoder_source);
-    ec_SDOread(joint_idx, 0x2012, 0x09, false, &size, &encoder_source,
-               EC_TIMEOUTRXM);
-
-    std::uint32_t encoder_resolution;
-    size = sizeof(encoder_resolution);
-    if (encoder_source == 1) {
-      ec_SDOread(joint_idx, 0x2110, 0x03, false, &size, &encoder_resolution,
-                 EC_TIMEOUTRXM);
-    } else if (encoder_source == 2) {
-      ec_SDOread(joint_idx, 0x2112, 0x03, false, &size, &encoder_resolution,
-                 EC_TIMEOUTRXM);
-    } else {
-      ec_close();
-      return std::unexpected(Error{
-          ErrorCode::kEtherCATError,
-          "No encoder configured for joint " + std::to_string(joint_idx)});
-    }
-    encoder_resolutions_[joint_idx - 1] = encoder_resolution;
-    position_reductions_[joint_idx - 1] =
-        (encoder_source == 2) ? 1.0f : configured_reductions_[joint_idx - 1].load();
-
-    const auto si_velocity_unit =
-        ReadSDOValue(static_cast<std::uint16_t>(joint_idx), 0x60A9, 0x00);
-    if (!si_velocity_unit) {
-      ec_close();
-      return std::unexpected(Error{
-          ErrorCode::kEtherCATError,
-          "ReadSDOValue failed for 0x60A9 on joint " + std::to_string(joint_idx)});
-    }
-    si_velocity_units_[joint_idx - 1] = *si_velocity_unit;
-
-    auto rated_result = ReadSDOValue(static_cast<std::uint16_t>(joint_idx),
-                                     0x6076, 0x00);
-    if (!rated_result) {
-      ec_close();
-      return std::unexpected(
-          Error{ErrorCode::kEtherCATError,
-                "Failed to read rated torque for joint " +
-                    std::to_string(joint_idx)});
-    }
-    rated_torques_[joint_idx - 1] = static_cast<float>(*rated_result) / 1000.0f;
-
-    const float configured_reduction =
-        configured_reductions_.at(joint_idx - 1).load();
-    const auto drive_reduction = ReadDriveMechanicalReduction(
-        static_cast<std::uint16_t>(joint_idx));
-    if (kUseDriveReportedMechanicalReduction) {
-      if (drive_reduction) {
-        configured_reductions_.at(joint_idx - 1) = *drive_reduction;
-        if (std::abs(configured_reduction - *drive_reduction) > 1e-6f) {
-          spdlog::warn(
-              "Overriding configured mechanical reduction for joint {} from "
-              "{:.6f} to drive-reported 0x6091 ratio {:.6f}",
-              joint_idx - 1, configured_reduction, *drive_reduction);
-        }
-      } else {
-        spdlog::warn(
-            "Failed to read valid 0x6091 gear ratio for joint {}, keeping "
-            "configured mechanical reduction {:.6f}",
-            joint_idx - 1, configured_reduction);
-      }
-    }
-  }
-
-  // Request operational state for all slaves after startup SDO reads to avoid
-  // disrupting PDO exchange during initialization.
-  expected_wkc_ = (ec_group[0].outputsWKC * 2) + ec_group[0].inputsWKC;
-  for (int slave_id = 0; slave_id < ec_slavecount; ++slave_id) {
-    ec_slave[slave_id].state = EC_STATE_OPERATIONAL;
-  }
-  ec_send_processdata();
-  ec_receive_processdata(EC_TIMEOUTRET);
-  ec_writestate(0);
-
-  // Wait for all slaves to reach OP state.
-  uint16 actual_state;
-  std::size_t chk = 200;
-  do {
-    ec_send_processdata();
-    ec_receive_processdata(EC_TIMEOUTRET);
-    ec_readstate();
-    actual_state = ec_statecheck(0, EC_STATE_OPERATIONAL, 50000);
-  } while (chk-- && (actual_state != EC_STATE_OPERATIONAL));
-
-  if (chk == 0) {
-    ec_close();
-    return std::unexpected(Error{ErrorCode::kEtherCATError,
-                                 "Slaves failed to reach OPERATIONAL state"});
-  }
-
-  // Connect PDO struct pointers after OP is established.
-  for (std::size_t joint_idx = 1; joint_idx <= kNumJoints; ++joint_idx) {
-    const std::size_t i = joint_idx - 1;
-    in_somanet_[i] =
-        reinterpret_cast<InSomanet50t*>(ec_slave[joint_idx].inputs);
-    out_somanet_[i] =
-        reinterpret_cast<OutSomanet50t*>(ec_slave[joint_idx].outputs);
-  }
-
   // Initialize joint admittances (wrist roll only)
   joint_admittances_[kWristRollIdx].emplace();
   if (!joint_admittances_[kWristRollIdx]->Init(10.0f, 500.0f)) {
@@ -361,38 +106,16 @@ std::expected<void, Error> ArmInterface::Initialize() {
                                  "Failed to init wrist roll admittance"});
   }
 
-  // Start the EtherCAT error monitoring thread
-  ecat_error_thread_ = std::jthread([this](std::stop_token st) {
-    EcatCheck(st);
-  });
-
-  initialized_ = true;
   spdlog::info("ArmInterface initialized successfully");
   return {};
 }
 
 std::expected<void, Error> ArmInterface::StartControlLoop(
-    float /*control_rate_hz*/) {
-  if (!initialized_) {
-    return std::unexpected(
-        Error{ErrorCode::kNotInitialized, "Not initialized"});
-  }
-  if (control_loop_running_) {
-    return std::unexpected(Error{ErrorCode::kControlLoopAlreadyRunning,
-                                 "Control loop already running"});
-  }
+    float control_rate_hz) {
+  auto result = SynapticonBase::StartControlLoop(control_rate_hz);
+  if (!result) return result;
 
-  control_loop_running_ = true;
-  shutdown_requested_ = false;
   dynamic_sim_exited_ = false;
-  pdo_exchange_count_.store(0);
-
-  // Start the EtherCAT control loop
-  control_thread_ = std::jthread([this](std::stop_token st) {
-    ControlLoop(st);
-  });
-
-  // Start the dynamic simulation thread
   dynamic_sim_thread_ = std::jthread([this](std::stop_token st) {
     bool ok = dynamic_simulator_.Run(st);
     if (!ok) {
@@ -401,41 +124,22 @@ std::expected<void, Error> ArmInterface::StartControlLoop(
     dynamic_sim_exited_ = true;
   });
 
-  spdlog::info("Control loop started");
   return {};
 }
 
-bool ArmInterface::IsControlLoopReady() const noexcept {
-  return control_loop_running_.load() &&
-         pdo_exchange_count_.load() >= kMinPdoExchanges;
-}
-
 std::expected<void, Error> ArmInterface::StopControlLoop() {
-  if (!control_loop_running_) {
-    return std::unexpected(Error{ErrorCode::kControlLoopNotRunning,
-                                 "Control loop not running"});
-  }
+  dynamic_sim_thread_.request_stop();
+  if (dynamic_sim_thread_.joinable()) dynamic_sim_thread_.join();
 
-  // Apply brakes on all joints before stopping
+  // Apply brakes with arm control level before stopping base
   {
     std::scoped_lock lock(ecat_mtx_, hw_state_mtx_);
     for (std::size_t i = 0; i < kNumJoints; ++i) {
-      Stop(out_somanet_, true, i);
       control_level_[i] = ControlLevel::kUndefined;
     }
   }
 
-  // Request stop on both threads; jthread destructor handles join
-  control_thread_.request_stop();
-  dynamic_sim_thread_.request_stop();
-
-  if (control_thread_.joinable()) control_thread_.join();
-  if (dynamic_sim_thread_.joinable()) dynamic_sim_thread_.join();
-
-  control_loop_running_ = false;
-  in_normal_op_mode_ = false;
-  spdlog::info("Control loop stopped");
-  return {};
+  return SynapticonBase::StopControlLoop();
 }
 
 // ============================================================================
@@ -470,7 +174,6 @@ std::expected<void, Error> ArmInterface::SwitchControlModeImpl(
               "Control mode change is disallowed at this moment"});
   }
 
-  // RAII guard for mode_switch_in_progress_
   struct ModeSwitchGuard {
     std::atomic<bool>& flag;
     ModeSwitchGuard(std::atomic<bool>& f) : flag(f) { flag = true; }
@@ -478,11 +181,10 @@ std::expected<void, Error> ArmInterface::SwitchControlModeImpl(
   };
   ModeSwitchGuard guard(mode_switch_in_progress_);
 
-  // Stop all joints with brakes
   {
     std::scoped_lock lock(ecat_mtx_, hw_state_mtx_);
     for (std::size_t i = 0; i < kNumJoints; ++i) {
-      Stop(out_somanet_, true, i);
+      Stop(out_somanet_[i], true);
     }
     ResetSpringAdjustState();
   }
@@ -507,7 +209,6 @@ std::expected<void, Error> ArmInterface::SwitchControlModeImpl(
         elevation_inertial_torque_filter_.Reset();
       }
 
-      // Set commutation offset state bit to Valid for torque control
       std::int16_t valid_offset_state = 2;
       int result;
       {
@@ -525,7 +226,6 @@ std::expected<void, Error> ArmInterface::SwitchControlModeImpl(
     }
   }
 
-  // Clear commands and set new modes
   for (std::size_t i = 0; i < kNumJoints; ++i) {
     threadsafe_commands_positions_[i] =
         std::numeric_limits<float>::quiet_NaN();
@@ -536,7 +236,6 @@ std::expected<void, Error> ArmInterface::SwitchControlModeImpl(
     hold_in_shutdown_[i] = false;
   }
 
-  // Handle spring adjust mode
   for (std::size_t i = 0; i < kNumJoints; ++i) {
     if (new_modes[i] == ControlLevel::kSpringAdjust) {
       allow_mode_change_ = false;
@@ -547,13 +246,13 @@ std::expected<void, Error> ArmInterface::SwitchControlModeImpl(
     std::lock_guard<std::mutex> lock(hw_state_mtx_);
     for (std::size_t i = 0; i < kNumJoints; ++i) {
       control_level_[i] = new_modes[i];
+      // Keep base control_mode_ in sync for CiA402 state machine
+      control_mode_[i] = ToControlMode(new_modes[i]);
     }
   }
 
-  // One control cycle of delay
   osal_usleep(kCyclicLoopSleepUs);
 
-  // Release brakes for certain modes (hand-guided waits for deadman in loop)
   {
     std::scoped_lock lock(ecat_mtx_, hw_state_mtx_);
     for (std::size_t i = 0; i < kNumJoints; ++i) {
@@ -570,7 +269,7 @@ std::expected<void, Error> ArmInterface::SwitchControlModeImpl(
 }
 
 // ============================================================================
-// Streaming commands
+// Streaming commands (JointFloatArray overloads)
 // ============================================================================
 
 std::expected<void, Error> ArmInterface::SetPositionCommand(
@@ -601,7 +300,6 @@ std::expected<void, Error> ArmInterface::SetPositionCommand(
     }
   }
   if (need_switch) {
-    // Position control for all joints except spring adjust
     auto result = SwitchControlMode(MakeStreamingModes(ControlLevel::kPosition));
     if (!result) return result;
   }
@@ -616,7 +314,8 @@ std::expected<void, Error> ArmInterface::SetPositionCommand(
     float pos_red = position_reductions_[i].load();
     std::uint32_t enc_res = encoder_resolutions_[i].load();
     threadsafe_commands_positions_[i] = static_cast<float>(
-        OutputShaftRadToInputTicks(positions[i], pos_red, enc_res, i));
+        OutputShaftRadToInputTicks(positions[i], pos_red, enc_res,
+                                   startup_angle_wrap_value_[i]));
   }
   return {};
 }
@@ -649,7 +348,6 @@ std::expected<void, Error> ArmInterface::SetVelocityCommand(
     }
   }
   if (need_switch) {
-    // Velocity control for all joints except spring adjust
     auto result = SwitchControlMode(MakeStreamingModes(ControlLevel::kVelocity));
     if (!result) return result;
   }
@@ -705,7 +403,6 @@ std::expected<void, Error> ArmInterface::SetTorqueCommand(
     }
   }
   if (need_switch) {
-    // Torque control for all joints except spring adjust
     auto result = SwitchControlMode(MakeStreamingModes(ControlLevel::kTorque));
     if (!result) return result;
   }
@@ -726,8 +423,6 @@ std::expected<void, Error> ArmInterface::SetTorqueCommand(
 // Generic commands
 // ============================================================================
 
-// Joint commands for joints in kSpringAdjust are ignored; use SetSpringSetpoint
-// for the spring load / potentiometer target.
 std::expected<void, Error> ArmInterface::SendCommand(
     const JointFloatArray& joint_commands) {
   if (!control_loop_running_) {
@@ -744,7 +439,7 @@ std::expected<void, Error> ArmInterface::SendCommand(
         threadsafe_commands_positions_[i] = static_cast<float>(
             OutputShaftRadToInputTicks(joint_commands[i],
                                        position_reductions_[i].load(), enc_res,
-                                       i));
+                                       startup_angle_wrap_value_[i]));
         break;
       case ControlLevel::kVelocity:
         threadsafe_commands_velocities_[i] = static_cast<float>(
@@ -793,7 +488,7 @@ std::expected<void, Error> ArmInterface::SendCommand(
         threadsafe_commands_positions_[i] = static_cast<float>(
             OutputShaftRadToInputTicks(joint_commands[j],
                                        position_reductions_[i].load(), enc_res,
-                                       i));
+                                       startup_angle_wrap_value_[i]));
         break;
       case ControlLevel::kVelocity:
         threadsafe_commands_velocities_[i] = static_cast<float>(
@@ -816,26 +511,14 @@ std::expected<void, Error> ArmInterface::SendCommand(
 }
 
 // ============================================================================
-// Trajectory (placeholder)
-// ============================================================================
-
-std::expected<void, Error> ArmInterface::SetTrajectory(
-    const std::vector<float>& /*positions*/,
-    const std::vector<float>& /*time_from_start*/) {
-  // TODO: implement trajectory interpolation
-  return std::unexpected(
-      Error{ErrorCode::kInvalidMode, "Trajectory control not yet implemented"});
-}
-
-// ============================================================================
 // Spring
 // ============================================================================
 
 std::expected<void, Error> ArmInterface::SetSpringSetpoint(
     float load_in_newtons) {
-  if ((load_in_newtons < 0) || (load_in_newtons > 882))
-  {
-    return std::unexpected(Error{ErrorCode::kInvalidSpringSetpoint, "Invalid spring setpoint"});
+  if ((load_in_newtons < 0) || (load_in_newtons > 882)) {
+    return std::unexpected(Error{ErrorCode::kInvalidSpringSetpoint,
+                                 "Invalid spring setpoint"});
   }
   const float target_ticks = ConvertNewtonsToSpringLipsTicks(load_in_newtons);
   StoreSpringAdjustSetpoint(spring_setpoint_target_ticks_,
@@ -856,43 +539,39 @@ std::expected<void, Error> ArmInterface::SetSpringSetpoint(
 }
 
 // ============================================================================
-// State queries
+// State queries (JointFloatArray wrappers)
 // ============================================================================
 
-std::expected<JointFloatArray, Error> ArmInterface::GetPositions() const {
-  if (!control_loop_running_) {
-    return std::unexpected(Error{ErrorCode::kControlLoopNotRunning,
-                                 "Control loop not running"});
-  }
-  std::lock_guard<std::mutex> lock(hw_state_mtx_);
-  return state_positions_;
+std::expected<JointFloatArray, Error> ArmInterface::GetPositionsArray() const {
+  auto result = GetPositions();
+  if (!result) return std::unexpected(result.error());
+  JointFloatArray arr{};
+  std::copy_n(result->begin(), kNumJoints, arr.begin());
+  return arr;
 }
 
-std::expected<JointFloatArray, Error> ArmInterface::GetVelocities() const {
-  if (!control_loop_running_) {
-    return std::unexpected(Error{ErrorCode::kControlLoopNotRunning,
-                                 "Control loop not running"});
-  }
-  std::lock_guard<std::mutex> lock(hw_state_mtx_);
-  return state_velocities_;
+std::expected<JointFloatArray, Error> ArmInterface::GetVelocitiesArray() const {
+  auto result = GetVelocities();
+  if (!result) return std::unexpected(result.error());
+  JointFloatArray arr{};
+  std::copy_n(result->begin(), kNumJoints, arr.begin());
+  return arr;
 }
 
-std::expected<JointFloatArray, Error> ArmInterface::GetTorques() const {
-  if (!control_loop_running_) {
-    return std::unexpected(Error{ErrorCode::kControlLoopNotRunning,
-                                 "Control loop not running"});
-  }
-  std::lock_guard<std::mutex> lock(hw_state_mtx_);
-  return state_torques_;
+std::expected<JointFloatArray, Error> ArmInterface::GetTorquesArray() const {
+  auto result = GetTorques();
+  if (!result) return std::unexpected(result.error());
+  JointFloatArray arr{};
+  std::copy_n(result->begin(), kNumJoints, arr.begin());
+  return arr;
 }
 
-std::expected<JointFloatArray, Error> ArmInterface::GetAccelerations() const {
-  if (!control_loop_running_) {
-    return std::unexpected(Error{ErrorCode::kControlLoopNotRunning,
-                                 "Control loop not running"});
-  }
-  std::lock_guard<std::mutex> lock(hw_state_mtx_);
-  return state_accelerations_;
+std::expected<JointFloatArray, Error> ArmInterface::GetAccelerationsArray() const {
+  auto result = GetAccelerations();
+  if (!result) return std::unexpected(result.error());
+  JointFloatArray arr{};
+  std::copy_n(result->begin(), kNumJoints, arr.begin());
+  return arr;
 }
 
 // ============================================================================
@@ -916,9 +595,6 @@ std::expected<std::vector<int>, Error> ArmInterface::GetDialState() const {
     return std::unexpected(Error{ErrorCode::kControlLoopNotRunning,
                                  "Control loop not running"});
   }
-  // Read dial values via SDO (must be done from control thread, so return
-  // cached values; for now return 0 as placeholder since SDO reads are
-  // only safe from the control thread)
   return std::vector<int>{0, 0};
 }
 
@@ -927,7 +603,7 @@ std::expected<std::vector<int>, Error> ArmInterface::GetDialState() const {
 // ============================================================================
 
 std::expected<JointArray<JointLimitsInfo>, Error>
-ArmInterface::GetJointLimits() const {
+ArmInterface::GetJointLimitsArray() const {
   JointArray<JointLimitsInfo> limits{};
   for (std::size_t i = 0; i < kNumJoints; ++i) {
     limits[i].has_limits = has_position_limits_[i];
@@ -941,69 +617,18 @@ ArmInterface::GetJointLimits() const {
 // Internal helpers
 // ============================================================================
 
-void ArmInterface::UpdateInSomanetSnapshotLocked() {
-  for (std::size_t joint_idx = 0; joint_idx < kNumJoints; ++joint_idx) {
-    if (in_somanet_[joint_idx] == nullptr) {
-      continue;
-    }
-
-    in_somanet_snapshot_[joint_idx].position_value =
-        in_somanet_[joint_idx]->PositionValue;
-    in_somanet_snapshot_[joint_idx].velocity_value =
-        in_somanet_[joint_idx]->VelocityValue;
-    in_somanet_snapshot_[joint_idx].torque_value =
-        in_somanet_[joint_idx]->TorqueValue;
-  }
-}
-
-void ArmInterface::WaitForGoodProcessData() {
-  int wkc = -1;
-  ec_send_processdata();
-  wkc = ec_receive_processdata(EC_TIMEOUTRET);
-  while (wkc < 0) {
-    ec_send_processdata();
-    wkc = ec_receive_processdata(EC_TIMEOUTRET);
-    osal_usleep(100000);
-  }
-}
-
-void ArmInterface::HandleStartupFaults() {
-  ec_readstate();
-  for (int slave = 1; slave <= ec_slavecount; slave++) {
-    if (std::strcmp(ec_slave[slave].name, kExpectedSlaveName) != 0) continue;
-    if (ec_slave[slave].state == (EC_STATE_SAFE_OP + EC_STATE_ERROR)) {
-      spdlog::warn("Slave {} is in SAFE_OP + ERROR, attempting ack", slave);
-      ec_slave[slave].state = (EC_STATE_SAFE_OP + EC_STATE_ACK);
-      ec_writestate(slave);
-      osal_usleep(100000);
-    }
-  }
-}
-
 void ArmInterface::ResetSpringAdjustState() {
   spring_adjust_state_.time_prev = std::chrono::steady_clock::now();
   spring_adjust_state_.error_prev = std::nullopt;
 }
 
-bool ArmInterface::EStopEngaged() {
-  ec_send_processdata();
-  wkc_ = ec_receive_processdata(EC_TIMEOUTRET);
-
-  if (wkc_ < expected_wkc_) {
-    if (pdo_exchange_count_.load() < kMinPdoExchanges) {
-      // It's expected to have some pdo exchange failures on startup
-      return true;
-    }
-    static auto last_process_data_warn =
-        std::chrono::steady_clock::time_point{};
-    const auto now = std::chrono::steady_clock::now();
-    if (now - last_process_data_warn >= kProcessDataWarnThrottleInterval) {
-      spdlog::warn("Process data communication failed");
-      last_process_data_warn = now;
-    }
+bool ArmInterface::IsEStopEngaged() {
+  // Call base implementation for PDO exchange + WKC check
+  if (SynapticonBase::IsEStopEngaged()) {
     return true;
   }
 
+  // Arm-specific: SDO-based e-stop read
   std::uint16_t slave_number = 1;
   bool value_holder;
   int object_size = sizeof(value_holder);
@@ -1016,414 +641,75 @@ bool ArmInterface::EStopEngaged() {
   return value_holder;
 }
 
-float ArmInterface::CalculateUserTorque(const InSomanet50t* in_somanet,
-                                        std::size_t joint_idx) {
-  float measured_torque_nm = TorquePerMilleToTorqueNm(
-      in_somanet->TorqueValue, configured_reductions_[joint_idx],
-      rated_torques_[joint_idx]);
-  float expected_torque = dynamic_sim_state_->output.tau_required.at(joint_idx);
-  return expected_torque - measured_torque_nm;
-}
+void ArmInterface::OnPreStateMachine() {
+  skip_cycle_ = false;
 
-void ArmInterface::ApplyGravComp(std::size_t joint_idx,
-                                 const InSomanet50t* in_somanet,
-                                 OutSomanet50t* out_somanet) {
-  if ((joint_idx == kYaw1Idx) || (joint_idx == kYaw2Idx) ||
-      (joint_idx == kWristYawIdx) || (joint_idx == kElevationInertialIdx)) {
-    out_somanet->TorqueOffset = static_cast<std::int16_t>(
-        kTorqueNmToPerMilleMultiplier *
-        TorqueNmToTorquePerMille(
-            dynamic_sim_state_->output.tau_required.at(joint_idx),
-            configured_reductions_[joint_idx], rated_torques_[joint_idx]));
-  } else if (joint_idx == kWristPitchIdx) {
-    ApplyWristPitchHoldTorque(in_somanet, out_somanet);
-  } else if (joint_idx == kWristRollIdx) {
-    out_somanet->TorqueOffset = 0;
-  }
-}
-
-void ArmInterface::ApplyWristPitchHoldTorque(const InSomanet50t* in_somanet,
-                                             OutSomanet50t* out_somanet) {
-  float current_position = InputTicksToOutputShaftRad(
-      in_somanet->PositionValue, position_reductions_[kWristPitchIdx].load(),
-      encoder_resolutions_[kWristPitchIdx].load(), kWristPitchIdx);
-  float cosine_term = kWristPitchHoldTorque * std::cos(current_position);
-  float drake_ff = kTorqueNmToPerMilleMultiplier *
-                   TorqueNmToTorquePerMille(
-                       dynamic_sim_state_->output.tau_required.at(kWristPitchIdx),
-                       configured_reductions_[kWristPitchIdx],
-                       rated_torques_[kWristPitchIdx]);
-  out_somanet->TorqueOffset = static_cast<std::int16_t>(cosine_term + drake_ff);
-}
-
-// Refresh whether hand-guided wrist pitch should remain latched in shutdown.
-void ArmInterface::RefreshHandGuidedPitchBrakeHold() {
-  std::optional<std::int32_t> wrist_pitch_dial_value =
-      ReadSDOValue(static_cast<std::uint16_t>(kWristRollIdx + 1), 0x2402, 0x00);
-  if (!wrist_pitch_dial_value) {
-    spdlog::error("ReadSDOValue() failed for pitch dial");
-    hold_in_shutdown_[kWristPitchIdx] = true;
-    wrist_pitch_dial_filter_.Reset();
-    wrist_pitch_dial_state_.Reset();
+  auto wr_roll_gpio = ReadSDOValue(
+      static_cast<std::uint16_t>(kWristRollIdx + 1), 0x60FD, 0x00);
+  if (!wr_roll_gpio) {
+    spdlog::error("ReadSDOValue() failed for GPIO");
+    skip_cycle_ = true;
     return;
   }
 
-  *wrist_pitch_dial_value = std::clamp(
-      *wrist_pitch_dial_value, elevate_config_.button_config.pitch_dial.min,
-      elevate_config_.button_config.pitch_dial.max);
-  float normalized_dial =
-      -static_cast<float>(
-          *wrist_pitch_dial_value - elevate_config_.button_config.pitch_dial.center) /
-      (0.5f * (elevate_config_.button_config.pitch_dial.max -
-               elevate_config_.button_config.pitch_dial.min));
-  hold_in_shutdown_[kWristPitchIdx] =
-      !UpdateWristPitchDialActivationState(normalized_dial,
-                                           wrist_pitch_dial_state_);
-}
+  lips_spring_position_ = in_somanet_[kSpringAdjustIdx]->PositionValue;
 
-void ArmInterface::ApplyFrictionCompensation(std::size_t joint_idx) {
-  float joint_velocity_rad_s = VelocityValueToOutputShaftRadPerS(
-      in_somanet_[joint_idx]->VelocityValue,
-      si_velocity_units_[joint_idx].load(),
-      configured_reductions_[joint_idx].load(),
-      encoder_resolutions_[joint_idx].load());
+  hw_function_enable_ =
+      static_cast<float>((*wr_roll_gpio & (1 << 16)) >> 16);
+  hw_decomp_button_ =
+      static_cast<float>((*wr_roll_gpio & (1 << 17)) >> 17);
+  hw_comp_button_ =
+      static_cast<float>((*wr_roll_gpio & (1 << 18)) >> 18);
+  admittance_button_pressed_ = (*wr_roll_gpio & (1 << 19)) >> 19;
 
-  std::int32_t torque_sign = 0;
-  if (joint_idx == kYaw1Idx) {
-    torque_sign = elevate_config_.torque_sign.yaw1;
-  } else if (joint_idx == kYaw2Idx) {
-    torque_sign = elevate_config_.torque_sign.yaw2;
-  } else if (joint_idx == kWristYawIdx) {
-    torque_sign = elevate_config_.torque_sign.wrist_yaw;
+  deadman_pressed_ = hw_function_enable_.load() > 0.5f;
+
+  if (first_iteration_deadman_ && deadman_pressed_) {
+    first_iteration_deadman_ = false;
+    allow_mode_change_ = false;
+    prev_deadman_pressed_ = true;
+    spdlog::error(
+        "Function enable pressed at startup - blocking hand_guided");
+    skip_cycle_ = true;
+    return;
   }
+  first_iteration_deadman_ = false;
 
-  float yaw2_rad = InputTicksToOutputShaftRad(
-      in_somanet_[kYaw2Idx]->PositionValue,
-      position_reductions_[kYaw2Idx].load(),
-      encoder_resolutions_[kYaw2Idx].load(), kYaw2Idx);
-
-  if (joint_idx == kYaw1Idx) {
-    if (std::abs(yaw2_rad) < kYawAlignmentFrictionThreshold) {
-      if (joint_velocity_rad_s > 0) {
-        out_somanet_[joint_idx]->TorqueOffset +=
-            -torque_sign * kTorqueFrictionOffset[joint_idx];
-      } else if (joint_velocity_rad_s < 0) {
-        out_somanet_[joint_idx]->TorqueOffset +=
-            torque_sign * kTorqueFrictionOffset[joint_idx];
-      }
-    } else {
-      if (joint_velocity_rad_s > 0) {
-        out_somanet_[joint_idx]->TorqueOffset +=
-            torque_sign * kTorqueFrictionOffset[joint_idx];
-      } else if (joint_velocity_rad_s < 0) {
-        out_somanet_[joint_idx]->TorqueOffset +=
-            -torque_sign * kTorqueFrictionOffset[joint_idx];
-      }
-    }
+  if (require_new_command_mode_) {
+    allow_mode_change_ = true;
+    skip_cycle_ = true;
     return;
   }
 
-  if (joint_idx == kYaw2Idx) {
-    return;
+  float payload_mass_kg = SpringPotTicksToPayloadKg(lips_spring_position_);
+  if (payload_mass_kg > 0) {
+    dynamic_sim_state_->input.payload_mass = payload_mass_kg;
+  } else {
+    dynamic_sim_state_->input.payload_mass = 0.0f;
   }
 
-  if (joint_velocity_rad_s > kFrictionDeadband) {
-    out_somanet_[joint_idx]->TorqueOffset +=
-        torque_sign * kTorqueFrictionOffset[joint_idx];
-  } else if (joint_velocity_rad_s < -kFrictionDeadband) {
-    out_somanet_[joint_idx]->TorqueOffset +=
-        -torque_sign * kTorqueFrictionOffset[joint_idx];
+  if (control_level_[0] == ControlLevel::kHandGuided &&
+      deadman_pressed_ && !prev_deadman_pressed_) {
+    allow_mode_change_ = false;
+    prev_deadman_pressed_ = true;
+  } else if (prev_deadman_pressed_ && !deadman_pressed_) {
+    allow_mode_change_ = true;
+    prev_deadman_pressed_ = false;
   }
 }
 
-// ============================================================================
-// EtherCAT error monitoring
-// ============================================================================
+bool ArmInterface::OnNormalOperation(std::size_t joint_idx, bool mode_switch) {
+  if (skip_cycle_) return true;
 
-void ArmInterface::EcatCheck(std::stop_token stop_token) {
-  std::uint8_t currentgroup = 0;
-
-  while (!stop_token.stop_requested() &&
-         !shutdown_requested_.load(std::memory_order_acquire)) {
-    {
-      std::lock_guard<std::mutex> lock(ecat_mtx_);
-      if (in_normal_op_mode_ &&
-          ((wkc_ < expected_wkc_) || ec_group[currentgroup].docheckstate)) {
-        ec_group[currentgroup].docheckstate = false;
-        ec_readstate();
-        for (int slave = 1; slave <= ec_slavecount; slave++) {
-          if ((ec_slave[slave].group == currentgroup) &&
-              (ec_slave[slave].state != EC_STATE_OPERATIONAL)) {
-            ec_group[currentgroup].docheckstate = true;
-            if (ec_slave[slave].state == (EC_STATE_SAFE_OP + EC_STATE_ERROR)) {
-              spdlog::error("Slave {} in SAFE_OP+ERROR, attempting ack", slave);
-              ec_slave[slave].state = (EC_STATE_SAFE_OP + EC_STATE_ACK);
-              ec_writestate(slave);
-            } else if (ec_slave[slave].state == EC_STATE_SAFE_OP) {
-              spdlog::warn("Slave {} in SAFE_OP, changing to OPERATIONAL",
-                           slave);
-              ec_slave[slave].state = EC_STATE_OPERATIONAL;
-              ec_writestate(slave);
-            } else if (ec_slave[slave].state > EC_STATE_NONE) {
-              if (ec_reconfig_slave(slave, kEcTimeoutMon)) {
-                ec_slave[slave].islost = false;
-                spdlog::info("Slave {} reconfigured", slave);
-              }
-            } else if (!ec_slave[slave].islost) {
-              ec_statecheck(slave, EC_STATE_OPERATIONAL, EC_TIMEOUTRET);
-              if (ec_slave[slave].state == EC_STATE_NONE) {
-                ec_slave[slave].islost = true;
-                spdlog::error("Slave {} lost", slave);
-              }
-            }
-
-            if (ec_slave[slave].islost) {
-              if (ec_slave[slave].state == EC_STATE_NONE) {
-                if (ec_recover_slave(slave, kEcTimeoutMon)) {
-                  ec_slave[slave].islost = false;
-                  spdlog::info("Slave {} recovered", slave);
-                }
-              } else {
-                ec_slave[slave].islost = false;
-                spdlog::info("Slave {} found", slave);
-              }
-            }
-          }
-        }
-      }
-    }
-    osal_usleep(10000);
+  // Apply gravity comp for all joints in hand-guided and spring-adjust modes
+  if (control_level_[joint_idx] == ControlLevel::kHandGuided ||
+      control_level_[joint_idx] == ControlLevel::kSpringAdjust) {
+    ApplyGravComp(joint_idx, in_somanet_[joint_idx], out_somanet_[joint_idx]);
   }
-}
-
-// ============================================================================
-// Main control loop
-// ============================================================================
-
-void ArmInterface::ControlLoop(std::stop_token stop_token) {
-  JointBoolArray first_iteration{};
-  first_iteration.fill(true);
-
-  while (!stop_token.stop_requested() &&
-         !shutdown_requested_.load(std::memory_order_acquire) &&
-         !dynamic_sim_exited_) {
-    bool estop = false;
-    bool halt_triggered = false;
-    bool skip_cycle = false;
-    {
-      std::scoped_lock lock(ecat_mtx_, hw_state_mtx_);
-      estop = EStopEngaged();
-      if (wkc_.load() >= expected_wkc_.load()) {
-        UpdateInSomanetSnapshotLocked();
-        if (pdo_exchange_count_.load() < kMinPdoExchanges) {
-          pdo_exchange_count_.fetch_add(1);
-        }
-      }
-      if (estop) {
-        require_new_command_mode_ = true;
-      }
-
-      // After enough PDO exchanges, update state readout from a copied PDO
-      // snapshot rather than directly from the live SOEM buffers.
-      if (pdo_exchange_count_.load() >= kMinPdoExchanges) {
-        for (std::size_t joint_idx = 0; joint_idx < kNumJoints; ++joint_idx) {
-          const auto& snapshot = in_somanet_snapshot_[joint_idx];
-          state_velocities_[joint_idx] = VelocityValueToOutputShaftRadPerS(
-              snapshot.velocity_value, si_velocity_units_[joint_idx].load(),
-              configured_reductions_[joint_idx].load(),
-              encoder_resolutions_[joint_idx].load());
-          state_positions_[joint_idx] = InputTicksToOutputShaftRad(
-              snapshot.position_value, position_reductions_[joint_idx].load(),
-              encoder_resolutions_[joint_idx].load(), joint_idx);
-          state_torques_[joint_idx] =
-              (snapshot.torque_value / 1000.0f) *
-              rated_torques_[joint_idx].load() *
-              configured_reductions_[joint_idx].load();
-          state_accelerations_[joint_idx] = 0.0f;
-        }
-      }
-    }
-
-    if (estop) {
-      osal_usleep(kCyclicLoopSleepUs);
-      continue;
-    }
-
-    // Check halt condition
-    {
-      std::lock_guard<std::mutex> lock(halt_mutex_);
-      if (halt_condition_ && halt_condition_()) {
-        spdlog::info("Halt condition triggered, stopping all joints");
-        {
-          std::scoped_lock hw_lock(ecat_mtx_, hw_state_mtx_);
-          for (std::size_t i = 0; i < kNumJoints; ++i) {
-            Stop(out_somanet_, true, i);
-          }
-        }
-        halt_condition_ = nullptr;
-        halt_triggered = true;
-      }
-    }
-
-    if (halt_triggered) {
-      osal_usleep(kCyclicLoopSleepUs);
-      continue;
-    }
-
-    {
-      std::scoped_lock lock(ecat_mtx_, hw_state_mtx_);
-
-      // Read GPIO via SDO
-      auto wr_roll_gpio = ReadSDOValue(
-          static_cast<std::uint16_t>(kWristRollIdx + 1), 0x60FD, 0x00);
-      if (!wr_roll_gpio) {
-        spdlog::error("ReadSDOValue() failed for GPIO");
-        skip_cycle = true;
-      } else {
-        const std::int32_t lips_spring_position =
-            in_somanet_[kSpringAdjustIdx]->PositionValue;
-
-        hw_function_enable_ =
-            static_cast<float>((*wr_roll_gpio & (1 << 16)) >> 16);
-        hw_decomp_button_ =
-            static_cast<float>((*wr_roll_gpio & (1 << 17)) >> 17);
-        hw_comp_button_ =
-            static_cast<float>((*wr_roll_gpio & (1 << 18)) >> 18);
-        const bool admittance_button_pressed = (*wr_roll_gpio & (1 << 19)) >> 19;
-
-        const bool deadman_pressed = hw_function_enable_.load() > 0.5f;
-        static bool prev_deadman_pressed = false;
-
-        // Check if deadman pressed initially (stuck button safety)
-        if (first_iteration[0] && deadman_pressed) {
-          first_iteration[0] = false;
-          allow_mode_change_ = false;
-          prev_deadman_pressed = true;
-          spdlog::error(
-              "Function enable pressed at startup - blocking hand_guided");
-          skip_cycle = true;
-        } else {
-          first_iteration[0] = false;
-
-          if (require_new_command_mode_) {
-            allow_mode_change_ = true;
-            skip_cycle = true;
-          } else {
-            // Update payload mass from spring potentiometer
-            float payload_mass_kg =
-                SpringPotTicksToPayloadKg(lips_spring_position);
-            if (payload_mass_kg > 0) {
-              dynamic_sim_state_->input.payload_mass = payload_mass_kg;
-            } else {
-              dynamic_sim_state_->input.payload_mass = 0.0f;
-            }
-
-            // Deadman mode change state tracking
-            if (control_level_[0] == ControlLevel::kHandGuided &&
-                deadman_pressed && !prev_deadman_pressed) {
-              allow_mode_change_ = false;
-              prev_deadman_pressed = true;
-            } else if (prev_deadman_pressed && !deadman_pressed) {
-              allow_mode_change_ = true;
-              prev_deadman_pressed = false;
-            }
-
-            // Run state machine for each joint
-            for (std::size_t joint_idx = 0; joint_idx < kNumJoints; ++joint_idx) {
-              if (first_iteration.at(joint_idx)) {
-                out_somanet_[joint_idx]->OpMode = kProfileTorqueMode;
-                first_iteration.at(joint_idx) = false;
-              }
-
-              // Gravity compensation
-              ApplyGravComp(joint_idx, in_somanet_[joint_idx],
-                            out_somanet_[joint_idx]);
-
-              StateMachineStep(joint_idx, lips_spring_position,
-                               admittance_button_pressed, deadman_pressed);
-
-              StatusWordErrorLogging(joint_idx);
-            }
-          }
-        }
-      }
-    }  // mutex scope
-
-    if (skip_cycle) {
-      osal_usleep(kCyclicLoopSleepUs);
-      continue;
-    }
-
-    osal_usleep(kCyclicLoopSleepUs);
-  }
-}
-
-// ============================================================================
-// State machine
-// ============================================================================
-
-void ArmInterface::StateMachineStep(std::size_t joint_idx,
-                                    std::int32_t lips_spring_position,
-                                    bool admittance_button_pressed,
-                                    bool deadman_pressed) {
-  const auto statusword = in_somanet_[joint_idx]->Statusword;
-  if (joint_idx == kWristPitchIdx &&
-      control_level_[joint_idx] == ControlLevel::kHandGuided &&
-      hold_in_shutdown_[joint_idx].load()) {
-    // Check if we should allow the wrist pitch state machine to transition and the brake can come off
-    RefreshHandGuidedPitchBrakeHold();
-  }
-  const bool hold_in_shutdown = hold_in_shutdown_[joint_idx].load();
-
-  // Fault
-  if ((statusword & 0x004F) == 0x0008) {
-    HandleFault(in_somanet_[joint_idx], out_somanet_[joint_idx], joint_idx);
-    return;
-  }
-  // Switch on disabled
-  if ((statusword & 0x004F) == 0x0040) {
-    HandleShutdown(out_somanet_, joint_idx, control_level_,
-                   mode_switch_in_progress_, hold_in_shutdown);
-    return;
-  }
-  // Ready to switch on
-  if ((statusword & 0x006F) == 0x0021) {
-    HandleSwitchOn(out_somanet_, joint_idx, hold_in_shutdown);
-    return;
-  }
-  // Switched on
-  if ((statusword & 0x006F) == 0x0023) {
-    HandleEnableOperation(out_somanet_, joint_idx, mode_switch_in_progress_,
-                          control_level_[joint_idx], deadman_pressed,
-                          hold_in_shutdown);
-    return;
-  }
-  // Quick stop active
-  if ((statusword & 0x006F) == 0x0007) {
-    if (control_level_[joint_idx] != ControlLevel::kQuickStop) {
-      out_somanet_[joint_idx]->Controlword = 0b00000000;
-    }
-    return;
-  }
-  // Fault reaction active or Not ready to switch on
-  if ((statusword & 0x004F) == 0x000F ||
-      (statusword & 0x004F) == 0x0000) {
-    return;
-  }
-
-  // ---- Normal operation (Operation Enabled) ----
-  if ((statusword & 0x0027) != 0x0027) {
-    spdlog::warn("Joint {} in unrecognized Statusword state: 0x{:04X}",
-                 joint_idx, statusword);
-    return;
-  }
-
-  in_normal_op_mode_ = true;
-  const bool mode_switch = mode_switch_in_progress_;
 
   // --- Hand-guided ---
   if (control_level_[joint_idx] == ControlLevel::kHandGuided) {
-    if (!deadman_pressed) {
+    if (!deadman_pressed_) {
       if (joint_idx == kWristPitchIdx) {
         wrist_pitch_dial_filter_.Reset();
         wrist_pitch_dial_state_.Reset();
@@ -1432,21 +718,19 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
         wrist_roll_admittance_filter_.Reset();
       }
       if (!mode_switch) {
-        // Mode switch in progress: it will already stop the joint
-        Stop(out_somanet_, true, joint_idx);
+        Stop(out_somanet_[joint_idx], true);
       }
-      return;
+      return true;
     }
 
     if ((joint_idx != kSpringAdjustIdx) &&
         (joint_idx != kElevationInertialIdx)) {
-      // Reset admittance if button not pressed
-      if (!admittance_button_pressed && joint_admittances_[joint_idx]) {
+      if (!admittance_button_pressed_ && joint_admittances_[joint_idx]) {
         wrist_roll_admittance_filter_.Reset();
       }
 
       // Admittance mode
-      if (admittance_button_pressed && joint_admittances_[joint_idx]) {
+      if (admittance_button_pressed_ && joint_admittances_[joint_idx]) {
         float joint_vel = 0.0f;
         if (!std::isnan(
                 dynamic_sim_state_->output.tau_required.at(joint_idx)) &&
@@ -1463,12 +747,14 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
         } else {
           wrist_roll_admittance_filter_.Reset();
         }
+        const auto has_pos_lim = HasPositionLimitsToArray(has_position_limits_);
         SetVelocityWithLimits(joint_idx, in_somanet_[joint_idx],
-                              has_position_limits_, min_position_limits_,
-                              max_position_limits_,
+                              has_pos_lim, min_position_limits_,
+                              max_position_limits_, max_brake_torques_,
                               position_reductions_[joint_idx].load(),
                               encoder_resolutions_[joint_idx].load(), joint_vel,
                               si_velocity_units_[joint_idx].load(),
+                              startup_angle_wrap_value_[joint_idx],
                               wrist_roll_admittance_filter_,
                               out_somanet_[joint_idx]);
         out_somanet_[joint_idx]->Controlword = kNormalOpBrakesOff;
@@ -1479,11 +765,11 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
             static_cast<std::uint16_t>(kWristRollIdx + 1), 0x2402, 0x00);
         if (!wrist_pitch_dial_value) {
           spdlog::error("ReadSDOValue() failed for pitch dial");
-          Stop(out_somanet_, true, joint_idx);
+          Stop(out_somanet_[joint_idx], true);
           hold_in_shutdown_[joint_idx] = true;
           wrist_pitch_dial_filter_.Reset();
           wrist_pitch_dial_state_.Reset();
-          return;
+          return true;
         }
 
         *wrist_pitch_dial_value = std::clamp(
@@ -1507,20 +793,22 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
         hold_in_shutdown_[joint_idx] = !dial_is_active;
 
         if (hold_in_shutdown_[joint_idx].load()) {
-          Stop(out_somanet_, true, joint_idx);
+          Stop(out_somanet_[joint_idx], true);
           wrist_pitch_dial_filter_.Reset();
           wrist_pitch_dial_state_.Reset();
         } else {
           if (was_in_shutdown && !mode_switch) {
             out_somanet_[joint_idx]->Controlword = kNormalOpBrakesOff;
           }
+          const auto has_pos_lim2 = HasPositionLimitsToArray(has_position_limits_);
           SetVelocityWithLimits(
-              joint_idx, in_somanet_[joint_idx], has_position_limits_,
-              min_position_limits_, max_position_limits_,
+              joint_idx, in_somanet_[joint_idx], has_pos_lim2,
+              min_position_limits_, max_position_limits_, max_brake_torques_,
               position_reductions_[joint_idx].load(),
               encoder_resolutions_[joint_idx].load(), velocity,
-              si_velocity_units_[joint_idx].load(), wrist_pitch_dial_filter_,
-              out_somanet_[joint_idx]);
+              si_velocity_units_[joint_idx].load(),
+              startup_angle_wrap_value_[joint_idx],
+              wrist_pitch_dial_filter_, out_somanet_[joint_idx]);
         }
       }
       // Wrist roll (dial controlled)
@@ -1529,9 +817,9 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
             static_cast<std::uint16_t>(kWristYawIdx + 1), 0x2402, 0x00);
         if (!wrist_roll_dial_value) {
           spdlog::error("ReadSDOValue() failed for roll dial");
-          Stop(out_somanet_, true, joint_idx);
+          Stop(out_somanet_[joint_idx], true);
           wrist_roll_dial_filter_.Reset();
-          return;
+          return true;
         }
 
         *wrist_roll_dial_value = std::clamp(
@@ -1546,19 +834,21 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
         const float velocity =
             NormalizeWristRollDialToVelocity(normalized_dial);
 
+        const auto has_pos_lim3 = HasPositionLimitsToArray(has_position_limits_);
         SetVelocityWithLimits(joint_idx, in_somanet_[joint_idx],
-                              has_position_limits_, min_position_limits_,
-                              max_position_limits_,
+                              has_pos_lim3, min_position_limits_,
+                              max_position_limits_, max_brake_torques_,
                               position_reductions_[joint_idx].load(),
                               encoder_resolutions_[joint_idx].load(), velocity,
                               si_velocity_units_[joint_idx].load(),
+                              startup_angle_wrap_value_[joint_idx],
                               wrist_roll_dial_filter_,
                               out_somanet_[joint_idx]);
         if (!mode_switch) {
           out_somanet_[joint_idx]->Controlword = kNormalOpBrakesOff;
         }
       }
-      // Remaining joints (yaw1, yaw2, wrist_yaw): torque mode
+      // Remaining joints: torque mode
       else {
         float user_torque =
             CalculateUserTorque(in_somanet_[joint_idx], joint_idx);
@@ -1572,11 +862,13 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
         float current_position = InputTicksToOutputShaftRad(
             in_somanet_[joint_idx]->PositionValue,
             position_reductions_[joint_idx].load(),
-            encoder_resolutions_[joint_idx].load(), joint_idx);
+            encoder_resolutions_[joint_idx].load(),
+            startup_angle_wrap_value_[joint_idx]);
+        const auto has_pos_lim4 = HasPositionLimitsToArray(has_position_limits_);
         auto result = JointLimitCmdClamp(
-            joint_idx, ControlLevel::kTorque, current_position,
-            has_position_limits_, min_position_limits_, max_position_limits_,
-            torque);
+            joint_idx, ControlMode::kTorque, current_position,
+            has_pos_lim4, min_position_limits_, max_position_limits_,
+            max_brake_torques_, torque);
         if (result.has_value()) {
           torque = result->second;
           if (joint_idx == kWristYawIdx) {
@@ -1621,7 +913,7 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
         }
       }
     }
-    // Elevation link joints (spring_adjust, elevation_inertial)
+    // Elevation link joints
     else {
       if (joint_idx == kElevationInertialIdx) {
         float user_torque =
@@ -1643,63 +935,11 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
         out_somanet_[joint_idx]->Controlword = kNormalOpBrakesOff;
       }
     }
+    return true;
   }
-  // --- Velocity ---
-  else if (control_level_[joint_idx] == ControlLevel::kVelocity) {
-    if (!std::isnan(threadsafe_commands_velocities_[joint_idx])) {
-      static std::array<std::chrono::steady_clock::time_point, kNumJoints>
-          last_velocity_timeout_warn{};
-      const int64_t now_ns =
-          std::chrono::steady_clock::now().time_since_epoch().count();
-      const int64_t last_ns =
-          last_velocity_write_time_ns_[joint_idx].load(std::memory_order_acquire);
-      const bool timed_out =
-          (last_ns > 0) &&
-          (now_ns - last_ns > VELOCITY_COMMAND_TIMEOUT_NS);
 
-      if (timed_out) {
-        out_somanet_[joint_idx]->TargetVelocity = 0;
-        out_somanet_[joint_idx]->OpMode = kCyclicVelocityMode;
-        out_somanet_[joint_idx]->VelocityOffset = 0;
-        if (!mode_switch) {
-          out_somanet_[joint_idx]->Controlword = kNormalOpBrakesOff;
-        }
-        const auto now_tp = std::chrono::steady_clock::now();
-        if (now_tp - last_velocity_timeout_warn[joint_idx] >= 1s) {
-          spdlog::warn(
-              "Joint {} velocity command timed out, commanding zero",
-              joint_idx);
-          last_velocity_timeout_warn[joint_idx] = now_tp;
-        }
-      } else {
-        out_somanet_[joint_idx]->TargetVelocity = static_cast<std::int32_t>(
-            threadsafe_commands_velocities_[joint_idx].load());
-        out_somanet_[joint_idx]->OpMode = kCyclicVelocityMode;
-        out_somanet_[joint_idx]->VelocityOffset = 0;
-        if (!mode_switch) {
-          out_somanet_[joint_idx]->Controlword = kNormalOpBrakesOff;
-        }
-      }
-    }
-  }
-  // --- Position ---
-  else if (control_level_[joint_idx] == ControlLevel::kPosition) {
-    if (!std::isnan(threadsafe_commands_positions_[joint_idx])) {
-      out_somanet_[joint_idx]->TargetPosition =
-          static_cast<std::int32_t>(threadsafe_commands_positions_[joint_idx].load());
-      out_somanet_[joint_idx]->OpMode = kCyclicPositionMode;
-      out_somanet_[joint_idx]->VelocityOffset = 0;
-      if (!mode_switch) {
-        out_somanet_[joint_idx]->Controlword = kNormalOpBrakesOff;
-      }
-    }
-  }
-  // --- Quick stop ---
-  else if (control_level_[joint_idx] == ControlLevel::kQuickStop) {
-    Stop(out_somanet_, true, joint_idx);
-  }
   // --- Spring adjust ---
-  else if (control_level_[joint_idx] == ControlLevel::kSpringAdjust) {
+  if (control_level_[joint_idx] == ControlLevel::kSpringAdjust) {
     if (joint_idx == kSpringAdjustIdx) {
       if (!allow_mode_change_) {
         bool allow = allow_mode_change_.load();
@@ -1707,58 +947,161 @@ void ArmInterface::StateMachineStep(std::size_t joint_idx,
             spring_setpoint_target_ticks_, has_spring_setpoint_);
         if (target.has_value()) {
           float actuator_torque = SpringAdjustByLIPS(
-              *target, lips_spring_position, allow, spring_adjust_state_);
-          // TODO: filter it
+              *target, lips_spring_position_, allow, spring_adjust_state_);
           allow_mode_change_ = allow;
-          out_somanet_[joint_idx]->TargetTorque = static_cast<std::int16_t>(actuator_torque);
+          out_somanet_[joint_idx]->TargetTorque =
+              static_cast<std::int16_t>(actuator_torque);
           out_somanet_[joint_idx]->OpMode = kProfileTorqueMode;
           out_somanet_[joint_idx]->TorqueOffset = 0;
           if (!mode_switch) {
             out_somanet_[joint_idx]->Controlword = kNormalOpBrakesOff;
           }
-        }
-        // If we don't have a defined setpoint yet, just stop the joint
-        else {
+        } else {
           spdlog::warn("A spring adjust setpoint wasn't defined for the spring adjust joint. Stopping.");
           control_level_[joint_idx] = ControlLevel::kQuickStop;
+          control_mode_[joint_idx] = ControlMode::kQuickStop;
         }
       } else {
-        // When spring adjustment is done, SpringAdjustByLIPS sets allow_mode_change_ to true.
-        // Require a new spring setpoint for the next time this mode runs.
-        CompleteSpringAdjustSession(has_spring_setpoint_,
-                                    control_level_[joint_idx]);
+        ControlMode cm = ControlMode::kQuickStop;
+        CompleteSpringAdjustSession(has_spring_setpoint_, cm);
+        control_level_[joint_idx] = ControlLevel::kQuickStop;
+        control_mode_[joint_idx] = cm;
       }
     } else {
-      // Non-spring joints in spring adjust mode: quick stop
-      Stop(out_somanet_, true, joint_idx);
+      Stop(out_somanet_[joint_idx], true);
     }
+    return true;
   }
-  // --- Torque ---
-  else if (control_level_[joint_idx] == ControlLevel::kTorque) {
-    if (!std::isnan(threadsafe_commands_efforts_[joint_idx])) {
-      out_somanet_[joint_idx]->TargetTorque =
-          static_cast<std::int16_t>(threadsafe_commands_efforts_[joint_idx].load());
-      out_somanet_[joint_idx]->OpMode = kProfileTorqueMode;
-      if (!mode_switch) {
-        out_somanet_[joint_idx]->Controlword = kNormalOpBrakesOff;
-      }
-    }
+
+  // For base modes in hand-guided pitch, check hold state
+  if (joint_idx == kWristPitchIdx &&
+      control_level_[joint_idx] == ControlLevel::kHandGuided &&
+      hold_in_shutdown_[joint_idx].load()) {
+    RefreshHandGuidedPitchBrakeHold();
   }
-  // --- Undefined ---
-  else if (control_level_[joint_idx] == ControlLevel::kUndefined) {
-    out_somanet_[joint_idx]->OpMode = kProfileTorqueMode;
-    out_somanet_[joint_idx]->TorqueOffset = 0;
-    out_somanet_[joint_idx]->Controlword = kQuickStopCtrlWord;
+
+  // Not handled by arm — let base handle it
+  return false;
+}
+
+float ArmInterface::CalculateUserTorque(const InSomanet50t* in_somanet,
+                                        std::size_t joint_idx) {
+  float measured_torque_nm = TorquePerMilleToTorqueNm(
+      in_somanet->TorqueValue, configured_reductions_[joint_idx],
+      rated_torques_[joint_idx]);
+  float expected_torque = dynamic_sim_state_->output.tau_required.at(joint_idx);
+  return expected_torque - measured_torque_nm;
+}
+
+void ArmInterface::ApplyGravComp(std::size_t joint_idx,
+                                 const InSomanet50t* in_somanet,
+                                 OutSomanet50t* out_somanet) {
+  if ((joint_idx == kYaw1Idx) || (joint_idx == kYaw2Idx) ||
+      (joint_idx == kWristYawIdx) || (joint_idx == kElevationInertialIdx)) {
+    out_somanet->TorqueOffset = static_cast<std::int16_t>(
+        kTorqueNmToPerMilleMultiplier *
+        TorqueNmToTorquePerMille(
+            dynamic_sim_state_->output.tau_required.at(joint_idx),
+            configured_reductions_[joint_idx], rated_torques_[joint_idx]));
+  } else if (joint_idx == kWristPitchIdx) {
+    ApplyWristPitchHoldTorque(in_somanet, out_somanet);
+  } else if (joint_idx == kWristRollIdx) {
+    out_somanet->TorqueOffset = 0;
   }
 }
 
-void ArmInterface::StatusWordErrorLogging(std::size_t joint_idx) {
-  if (in_somanet_[joint_idx]->Statusword & (1 << 11)) {
-    spdlog::warn(
-        "Internal limit active for joint {}, TorqueDemand: {}, "
-        "VelocityDemandValue: {}",
-        joint_idx, in_somanet_[joint_idx]->TorqueDemand,
-        in_somanet_[joint_idx]->VelocityDemandValue);
+void ArmInterface::ApplyWristPitchHoldTorque(const InSomanet50t* in_somanet,
+                                             OutSomanet50t* out_somanet) {
+  float current_position = InputTicksToOutputShaftRad(
+      in_somanet->PositionValue, position_reductions_[kWristPitchIdx].load(),
+      encoder_resolutions_[kWristPitchIdx].load(),
+      startup_angle_wrap_value_[kWristPitchIdx]);
+  float cosine_term = kWristPitchHoldTorque * std::cos(current_position);
+  float drake_ff = kTorqueNmToPerMilleMultiplier *
+                   TorqueNmToTorquePerMille(
+                       dynamic_sim_state_->output.tau_required.at(kWristPitchIdx),
+                       configured_reductions_[kWristPitchIdx],
+                       rated_torques_[kWristPitchIdx]);
+  out_somanet->TorqueOffset = static_cast<std::int16_t>(cosine_term + drake_ff);
+}
+
+void ArmInterface::RefreshHandGuidedPitchBrakeHold() {
+  std::optional<std::int32_t> wrist_pitch_dial_value =
+      ReadSDOValue(static_cast<std::uint16_t>(kWristRollIdx + 1), 0x2402, 0x00);
+  if (!wrist_pitch_dial_value) {
+    spdlog::error("ReadSDOValue() failed for pitch dial");
+    hold_in_shutdown_[kWristPitchIdx] = true;
+    wrist_pitch_dial_filter_.Reset();
+    wrist_pitch_dial_state_.Reset();
+    return;
+  }
+
+  *wrist_pitch_dial_value = std::clamp(
+      *wrist_pitch_dial_value, elevate_config_.button_config.pitch_dial.min,
+      elevate_config_.button_config.pitch_dial.max);
+  float normalized_dial =
+      -static_cast<float>(
+          *wrist_pitch_dial_value - elevate_config_.button_config.pitch_dial.center) /
+      (0.5f * (elevate_config_.button_config.pitch_dial.max -
+               elevate_config_.button_config.pitch_dial.min));
+  hold_in_shutdown_[kWristPitchIdx] =
+      !UpdateWristPitchDialActivationState(normalized_dial,
+                                           wrist_pitch_dial_state_);
+}
+
+void ArmInterface::ApplyFrictionCompensation(std::size_t joint_idx) {
+  float joint_velocity_rad_s = VelocityValueToOutputShaftRadPerS(
+      in_somanet_[joint_idx]->VelocityValue,
+      si_velocity_units_[joint_idx].load(),
+      configured_reductions_[joint_idx].load(),
+      encoder_resolutions_[joint_idx].load());
+
+  std::int32_t torque_sign = 0;
+  if (joint_idx == kYaw1Idx) {
+    torque_sign = elevate_config_.torque_sign.yaw1;
+  } else if (joint_idx == kYaw2Idx) {
+    torque_sign = elevate_config_.torque_sign.yaw2;
+  } else if (joint_idx == kWristYawIdx) {
+    torque_sign = elevate_config_.torque_sign.wrist_yaw;
+  }
+
+  float yaw2_rad = InputTicksToOutputShaftRad(
+      in_somanet_[kYaw2Idx]->PositionValue,
+      position_reductions_[kYaw2Idx].load(),
+      encoder_resolutions_[kYaw2Idx].load(),
+      startup_angle_wrap_value_[kYaw2Idx]);
+
+  if (joint_idx == kYaw1Idx) {
+    if (std::abs(yaw2_rad) < kYawAlignmentFrictionThreshold) {
+      if (joint_velocity_rad_s > 0) {
+        out_somanet_[joint_idx]->TorqueOffset +=
+            -torque_sign * kTorqueFrictionOffset[joint_idx];
+      } else if (joint_velocity_rad_s < 0) {
+        out_somanet_[joint_idx]->TorqueOffset +=
+            torque_sign * kTorqueFrictionOffset[joint_idx];
+      }
+    } else {
+      if (joint_velocity_rad_s > 0) {
+        out_somanet_[joint_idx]->TorqueOffset +=
+            torque_sign * kTorqueFrictionOffset[joint_idx];
+      } else if (joint_velocity_rad_s < 0) {
+        out_somanet_[joint_idx]->TorqueOffset +=
+            -torque_sign * kTorqueFrictionOffset[joint_idx];
+      }
+    }
+    return;
+  }
+
+  if (joint_idx == kYaw2Idx) {
+    return;
+  }
+
+  if (joint_velocity_rad_s > kFrictionDeadband) {
+    out_somanet_[joint_idx]->TorqueOffset +=
+        torque_sign * kTorqueFrictionOffset[joint_idx];
+  } else if (joint_velocity_rad_s < -kFrictionDeadband) {
+    out_somanet_[joint_idx]->TorqueOffset +=
+        -torque_sign * kTorqueFrictionOffset[joint_idx];
   }
 }
 

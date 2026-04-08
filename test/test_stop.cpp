@@ -2,8 +2,9 @@
 #include <array>
 #include <memory>
 
+#include "elevated_control/arm_constants.hpp"
+#include "elevated_control/arm_types.hpp"
 #include "elevated_control/state_machine.hpp"
-#include "elevated_control/types.hpp"
 
 using namespace elevated_control;
 
@@ -36,7 +37,7 @@ TEST_F(StopFunctionTest, GeneralJointWithoutBrake) {
   const int joint_idx = 0;
   const bool apply_brake = false;
 
-  Stop(out_somanet_ptrs_, apply_brake, joint_idx);
+  Stop(out_somanet_ptrs_[joint_idx], apply_brake);
 
   EXPECT_EQ(out_somanet_ptrs_[joint_idx]->TargetVelocity, 0);
   EXPECT_EQ(out_somanet_ptrs_[joint_idx]->VelocityOffset, 0);
@@ -51,7 +52,7 @@ TEST_F(StopFunctionTest, GeneralJointWithBrake) {
   const int joint_idx = 1;
   const bool apply_brake = true;
 
-  Stop(out_somanet_ptrs_, apply_brake, joint_idx);
+  Stop(out_somanet_ptrs_[joint_idx], apply_brake);
 
   EXPECT_EQ(out_somanet_ptrs_[joint_idx]->TargetVelocity, 0);
   EXPECT_EQ(out_somanet_ptrs_[joint_idx]->VelocityOffset, 0);
@@ -81,7 +82,7 @@ TEST_F(StopFunctionTest, OtherJointsUnaffected) {
     original_controlwords[i] = out_somanet_ptrs_[i]->Controlword;
   }
 
-  Stop(out_somanet_ptrs_, apply_brake, target_joint_idx);
+  Stop(out_somanet_ptrs_[target_joint_idx], apply_brake);
 
   for (std::size_t i = 0; i < kNumJoints; ++i) {
     if (i != static_cast<std::size_t>(target_joint_idx)) {
@@ -103,7 +104,7 @@ TEST_F(StopFunctionTest, OtherJointsUnaffected) {
 TEST_F(StopFunctionTest, MultipleCallsOnSameJoint) {
   const int joint_idx = 3;
 
-  Stop(out_somanet_ptrs_, false, joint_idx);
+  Stop(out_somanet_ptrs_[joint_idx], false);
 
   EXPECT_EQ(out_somanet_ptrs_[joint_idx]->TargetVelocity, 0);
   EXPECT_EQ(out_somanet_ptrs_[joint_idx]->VelocityOffset, 0);
@@ -117,7 +118,7 @@ TEST_F(StopFunctionTest, MultipleCallsOnSameJoint) {
   out_somanet_ptrs_[joint_idx]->TorqueOffset = 75;
   out_somanet_ptrs_[joint_idx]->Controlword = 0x1234;
 
-  Stop(out_somanet_ptrs_, true, joint_idx);
+  Stop(out_somanet_ptrs_[joint_idx], true);
 
   EXPECT_EQ(out_somanet_ptrs_[joint_idx]->TargetVelocity, 0);
   EXPECT_EQ(out_somanet_ptrs_[joint_idx]->VelocityOffset, 0);

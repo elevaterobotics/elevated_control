@@ -1,6 +1,6 @@
 // Copyright (c) 2025 Elevate Robotics Inc
 
-#include "elevated_control/constants.hpp"
+#include "elevated_control/arm_constants.hpp"
 #include "elevated_control/spring_adjust.hpp"
 #include "elevated_control/types.hpp"
 
@@ -89,24 +89,24 @@ TEST(SpringAdjustSetpointStorage, StoresAndOverwritesTarget) {
 TEST(CompleteSpringAdjustSession, ClearsSetpointAndSetsQuickStop) {
   std::atomic<float> setpoint_ticks{123.0f};
   std::atomic<bool> has_setpoint{true};
-  ControlLevel level = ControlLevel::kSpringAdjust;
-  CompleteSpringAdjustSession(has_setpoint, level);
+  ControlMode mode = ControlMode::kTorque;
+  CompleteSpringAdjustSession(has_setpoint, mode);
   EXPECT_FALSE(LoadSpringAdjustSetpoint(setpoint_ticks, has_setpoint).has_value());
-  EXPECT_EQ(level, ControlLevel::kQuickStop);
+  EXPECT_EQ(mode, ControlMode::kQuickStop);
 }
 
 TEST(SpringAdjustSetpointStorage, CanStoreNewTargetAfterCompletion) {
   std::atomic<float> setpoint_ticks{123.0f};
   std::atomic<bool> has_setpoint{true};
-  ControlLevel level = ControlLevel::kSpringAdjust;
+  ControlMode mode = ControlMode::kTorque;
 
-  CompleteSpringAdjustSession(has_setpoint, level);
+  CompleteSpringAdjustSession(has_setpoint, mode);
   StoreSpringAdjustSetpoint(setpoint_ticks, has_setpoint, 789.0f);
 
   auto new_setpoint = LoadSpringAdjustSetpoint(setpoint_ticks, has_setpoint);
   ASSERT_TRUE(new_setpoint.has_value());
   EXPECT_FLOAT_EQ(*new_setpoint, 789.0f);
-  EXPECT_EQ(level, ControlLevel::kQuickStop);
+  EXPECT_EQ(mode, ControlMode::kQuickStop);
 }
 
 TEST(ConvertNewtonsToSpringLipsTicks, ZeroNewtonsIsIntercept) {
@@ -114,7 +114,6 @@ TEST(ConvertNewtonsToSpringLipsTicks, ZeroNewtonsIsIntercept) {
 }
 
 TEST(ConvertNewtonsToSpringLipsTicks, MatchesLinearModel) {
-  // 3.7852 * 100 + 161.1
   EXPECT_FLOAT_EQ(ConvertNewtonsToSpringLipsTicks(100.0f), 539.62f);
   EXPECT_FLOAT_EQ(ConvertNewtonsToSpringLipsTicks(-10.0f), 123.248f);
 }

@@ -2,42 +2,40 @@
 
 #pragma once
 
-#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
-#include <mutex>
-
-#include "elevated_control/types.hpp"
 
 namespace elevated_control {
 
-// Startup angle wrap handling for single-turn encoders
-// TODO: remove this when multi-turn encoders are available
-inline std::array<std::once_flag, kNumJoints> startup_angle_wrap_flag{};
-inline std::array<std::atomic<float>, kNumJoints> startup_angle_wrap_value{};
-
-// On the first call for each joint, a one-time offset is computed (via std::call_once)
-// that brings the initial angle into [-pi, pi]. Handles multi-turn encoder accumulation.
+// Compute raw angle from encoder ticks. Wrap state parameters allow per-instance
+// startup wrapping (previously kept in global arrays).
 inline float InputTicksToOutputShaftRad(const std::int32_t ticks,
                                         const float mechanical_reduction,
                                         const std::uint32_t encoder_resolution,
-                                        const std::size_t joint_idx) {
+                                        const std::atomic<float>& wrap_value) {
   float unwrapped_angle =
       (static_cast<float>(ticks) / static_cast<float>(encoder_resolution)) *
       2.0f * static_cast<float>(M_PI) / mechanical_reduction;
+  return unwrapped_angle + wrap_value.load(std::memory_order_relaxed);
+}
 
-  std::call_once(startup_angle_wrap_flag[joint_idx], [&]() {
-    float wrapped = std::fmod(unwrapped_angle, 2.0f * static_cast<float>(M_PI));
-    if (wrapped > static_cast<float>(M_PI)) {
-      wrapped -= 2.0f * static_cast<float>(M_PI);
-    } else if (wrapped < -static_cast<float>(M_PI)) {
-      wrapped += 2.0f * static_cast<float>(M_PI);
-    }
-    startup_angle_wrap_value[joint_idx] = wrapped - unwrapped_angle;
-  });
-
-  return unwrapped_angle + startup_angle_wrap_value[joint_idx];
+// Compute the one-time startup wrap offset and store it.
+// Call once per joint at startup (typically via std::call_once).
+inline void ComputeStartupWrapOffset(std::int32_t ticks,
+                                     float mechanical_reduction,
+                                     std::uint32_t encoder_resolution,
+                                     std::atomic<float>& wrap_value) {
+  float unwrapped_angle =
+      (static_cast<float>(ticks) / static_cast<float>(encoder_resolution)) *
+      2.0f * static_cast<float>(M_PI) / mechanical_reduction;
+  float wrapped = std::fmod(unwrapped_angle, 2.0f * static_cast<float>(M_PI));
+  if (wrapped > static_cast<float>(M_PI)) {
+    wrapped -= 2.0f * static_cast<float>(M_PI);
+  } else if (wrapped < -static_cast<float>(M_PI)) {
+    wrapped += 2.0f * static_cast<float>(M_PI);
+  }
+  wrap_value.store(wrapped - unwrapped_angle, std::memory_order_relaxed);
 }
 
 inline float InputTicksVelocityToOutputShaftRadPerS(
@@ -57,9 +55,10 @@ inline std::int32_t OutputShaftRadToInputTicks(
 
 inline std::int32_t OutputShaftRadToInputTicks(
     float output_shaft_rad, float mechanical_reduction,
-    std::uint32_t encoder_resolution, std::size_t joint_idx) {
+    std::uint32_t encoder_resolution,
+    const std::atomic<float>& wrap_value) {
   float unwrapped_rad =
-      output_shaft_rad - startup_angle_wrap_value[joint_idx];
+      output_shaft_rad - wrap_value.load(std::memory_order_relaxed);
   return static_cast<std::int32_t>(unwrapped_rad * encoder_resolution *
                                    mechanical_reduction /
                                    (2.0f * static_cast<float>(M_PI)));

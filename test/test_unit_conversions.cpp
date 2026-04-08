@@ -13,9 +13,12 @@ TEST_F(UnitConversionTest, ZeroTicksReturnsZero) {
   const int32_t ticks = 0;
   const float mechanical_reduction = 170.0f;
   const uint32_t encoder_resolution = 2560;
+  std::atomic<float> wrap_value{0.0f};
+  elevated_control::ComputeStartupWrapOffset(ticks, mechanical_reduction,
+                                             encoder_resolution, wrap_value);
 
   const float result = elevated_control::InputTicksToOutputShaftRad(
-      ticks, mechanical_reduction, encoder_resolution, 0);
+      ticks, mechanical_reduction, encoder_resolution, wrap_value);
 
   EXPECT_FLOAT_EQ(result, 0.0f);
 }
@@ -25,9 +28,12 @@ TEST_F(UnitConversionTest, PositiveTicksReturnsCorrectRadians) {
   const float mechanical_reduction = 170.0f;
   const uint32_t encoder_resolution = 2560;
   const float expected_radians = 2.0f * static_cast<float>(M_PI) / 170.0f;
+  std::atomic<float> wrap_value{0.0f};
+  elevated_control::ComputeStartupWrapOffset(ticks, mechanical_reduction,
+                                             encoder_resolution, wrap_value);
 
   const float result = elevated_control::InputTicksToOutputShaftRad(
-      ticks, mechanical_reduction, encoder_resolution, 0);
+      ticks, mechanical_reduction, encoder_resolution, wrap_value);
 
   EXPECT_NEAR(result, expected_radians, 1e-5f);
 }
@@ -37,9 +43,12 @@ TEST_F(UnitConversionTest, NegativeTicksReturnsCorrectRadians) {
   const float mechanical_reduction = 170.0f;
   const uint32_t encoder_resolution = 2560;
   const float expected_radians = -2.0f * static_cast<float>(M_PI) / 170.0f;
+  std::atomic<float> wrap_value{0.0f};
+  elevated_control::ComputeStartupWrapOffset(ticks, mechanical_reduction,
+                                             encoder_resolution, wrap_value);
 
   const float result = elevated_control::InputTicksToOutputShaftRad(
-      ticks, mechanical_reduction, encoder_resolution, 0);
+      ticks, mechanical_reduction, encoder_resolution, wrap_value);
 
   EXPECT_NEAR(result, expected_radians, 1e-5f);
 }
@@ -137,13 +146,14 @@ TEST_F(UnitConversionTest, TorquePerMilleNegativeReturnsCorrectNm) {
 TEST_F(UnitConversionTest, RoundTripWithStartupWrapping) {
   const float mechanical_reduction = 170.0f;
   const uint32_t encoder_resolution = 2560;
-
-  // Choose ticks that produce an unwrapped angle > PI to trigger -2*PI wrapping
   const int32_t original_ticks = 220000;
 
-  const size_t joint_idx = 1;
+  std::atomic<float> wrap_value{0.0f};
+  elevated_control::ComputeStartupWrapOffset(original_ticks, mechanical_reduction,
+                                             encoder_resolution, wrap_value);
+
   const float wrapped_rad = elevated_control::InputTicksToOutputShaftRad(
-      original_ticks, mechanical_reduction, encoder_resolution, joint_idx);
+      original_ticks, mechanical_reduction, encoder_resolution, wrap_value);
 
   const float unwrapped_rad =
       (static_cast<float>(original_ticks) / encoder_resolution) * 2.0f *
@@ -153,7 +163,7 @@ TEST_F(UnitConversionTest, RoundTripWithStartupWrapping) {
 
   const int32_t round_tripped_ticks =
       elevated_control::OutputShaftRadToInputTicks(
-          wrapped_rad, mechanical_reduction, encoder_resolution, joint_idx);
+          wrapped_rad, mechanical_reduction, encoder_resolution, wrap_value);
 
   EXPECT_NEAR(round_tripped_ticks, original_ticks, 1);
 }
@@ -161,16 +171,18 @@ TEST_F(UnitConversionTest, RoundTripWithStartupWrapping) {
 TEST_F(UnitConversionTest, RoundTripWithoutWrapping) {
   const float mechanical_reduction = 170.0f;
   const uint32_t encoder_resolution = 2560;
-
   const int32_t original_ticks = 2560;
 
-  const size_t joint_idx = 2;
+  std::atomic<float> wrap_value{0.0f};
+  elevated_control::ComputeStartupWrapOffset(original_ticks, mechanical_reduction,
+                                             encoder_resolution, wrap_value);
+
   const float rad = elevated_control::InputTicksToOutputShaftRad(
-      original_ticks, mechanical_reduction, encoder_resolution, joint_idx);
+      original_ticks, mechanical_reduction, encoder_resolution, wrap_value);
 
   const int32_t round_tripped_ticks =
       elevated_control::OutputShaftRadToInputTicks(
-          rad, mechanical_reduction, encoder_resolution, joint_idx);
+          rad, mechanical_reduction, encoder_resolution, wrap_value);
 
   EXPECT_NEAR(round_tripped_ticks, original_ticks, 1);
 }

@@ -1,5 +1,5 @@
 #include "elevated_control/arm_interface.hpp"
-#include "elevated_control/types.hpp"
+#include "elevated_control/arm_types.hpp"
 #include "example_config_dir.hpp"
 
 #include <atomic>
