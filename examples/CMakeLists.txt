@@ -1,7 +1,12 @@
 add_executable(config_verification config_verification.cpp)
 target_link_libraries(config_verification PRIVATE ${PROJECT_NAME})
 target_include_directories(config_verification PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR})
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${PROJECT_SOURCE_DIR}/external/SOEM
+  ${PROJECT_SOURCE_DIR}/external/SOEM/soem
+  ${PROJECT_SOURCE_DIR}/external/SOEM/osal
+  ${PROJECT_SOURCE_DIR}/external/SOEM/osal/linux
+  ${PROJECT_SOURCE_DIR}/external/SOEM/oshw/linux)
 
 add_executable(basic_usage basic_usage.cpp)
 target_link_libraries(basic_usage PRIVATE ${PROJECT_NAME})

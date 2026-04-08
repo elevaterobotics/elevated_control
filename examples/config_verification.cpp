@@ -1,15 +1,12 @@
 // Copyright (c) 2025 Elevate Robotics Inc
 //
 // config_verification: Reads SDO configuration registers from all Synapticon
-// drives on the EtherCAT bus, optionally compares them against known-good CSV
-// reference files (e.g. from aladdin_config/synapticon_config/P3S2/), and
-// reports any mismatches.
+// drives on the EtherCAT bus, compares them against known-good CSV reference
+// files (e.g. from aladdin_config/synapticon_config/P3S2/), and reports any
+// mismatches.
 //
 // Usage:
-//   sudo ./config_verification [--ref-dir /path/to/P3S2] [--iface eno0]
-//
-// Without --ref-dir the tool prints the live values for human inspection.
-// With    --ref-dir it prints a pass/fail comparison per joint.
+//   sudo ./config_verification --ref-dir /path/to/P3S2 [--iface eno0]
 
 #include "elevated_control/state_machine.hpp"
 #include "example_config_dir.hpp"
@@ -24,7 +21,6 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
-#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -163,7 +159,7 @@ static const std::array<std::string, 7> kJointCsvStems = {
 // ---------------------------------------------------------------------------
 int main(int argc, char** argv) {
   std::string iface = "eno0";
-  std::optional<fs::path> ref_dir;
+  fs::path ref_dir;
 
   for (int i = 1; i < argc; ++i) {
     std::string_view arg(argv[i]);
@@ -174,16 +170,25 @@ int main(int argc, char** argv) {
     } else if (arg == "--help" || arg == "-h") {
       std::cout
           << "Usage: " << argv[0]
-          << " [--iface <nic>] [--ref-dir <path/to/P3S2>]\n"
+          << " --ref-dir <path/to/P3S2> [--iface <nic>]\n"
           << "\n"
-          << "  --iface   Network interface (default: eno0)\n"
           << "  --ref-dir Path to folder containing per-joint CSV reference\n"
-          << "            files (e.g. yaw1.csv, SAA.csv …).  When supplied,\n"
-          << "            live values are compared against the reference and\n"
-          << "            mismatches are flagged.  Without this flag the tool\n"
-          << "            just prints live values.\n";
+          << "            files (e.g. yaw1.csv, SAA.csv …).  Live values are\n"
+          << "            compared against the reference and mismatches are\n"
+          << "            flagged.  (Required.)\n"
+          << "  --iface   Network interface (default: eno0)\n";
       return EXIT_SUCCESS;
     }
+  }
+
+  if (ref_dir.empty()) {
+    std::cerr << "Error: --ref-dir is required.\n";
+    return EXIT_FAILURE;
+  }
+  if (!fs::is_directory(ref_dir)) {
+    std::cerr << "Error: --ref-dir path does not exist or is not a directory: "
+              << ref_dir << "\n";
+    return EXIT_FAILURE;
   }
 
   // -------------------------------------------------------------------------
@@ -234,18 +239,16 @@ int main(int argc, char** argv) {
       all_fw_ok = false;
     }
 
-    // -- Load reference CSV (if provided) --
+    // -- Load reference CSV --
     RefMap ref_values;
-    if (ref_dir) {
-      const std::size_t joint_idx =
-          static_cast<std::size_t>(slave - 1);  // 0-based
-      if (joint_idx < kJointCsvStems.size()) {
-        const fs::path csv_path =
-            *ref_dir / (kJointCsvStems[joint_idx] + ".csv");
-        std::cout << "  Reference  : " << csv_path << "\n";
-        ref_values = ParseRefCsv(csv_path);
-        std::cout << "  Ref entries: " << ref_values.size() << "\n";
-      }
+    const std::size_t joint_idx =
+        static_cast<std::size_t>(slave - 1);  // 0-based
+    if (joint_idx < kJointCsvStems.size()) {
+      const fs::path csv_path =
+          ref_dir / (kJointCsvStems[joint_idx] + ".csv");
+      std::cout << "  Reference  : " << csv_path << "\n";
+      ref_values = ParseRefCsv(csv_path);
+      std::cout << "  Ref entries: " << ref_values.size() << "\n";
     }
     std::cout << "\n";
 
@@ -326,19 +329,16 @@ int main(int argc, char** argv) {
   std::cout << "SUMMARY\n";
   std::cout << "══════════════════════════════════════════════════════\n";
   std::cout << "  Firmware   : " << (all_fw_ok ? "PASS ✓" : "FAIL ✗") << "\n";
-  if (ref_dir) {
-    std::cout << "  Registers  : " << (total_checked - total_mismatches)
-              << "/" << total_checked << " match";
-    if (total_mismatches == 0) {
-      std::cout << "  →  PASS ✓\n";
-    } else {
-      std::cout << "  →  FAIL ✗ (" << total_mismatches << " mismatch"
-                << (total_mismatches != 1 ? "es" : "") << ")\n";
-    }
+  std::cout << "  Registers  : " << (total_checked - total_mismatches)
+            << "/" << total_checked << " match";
+  if (total_mismatches == 0) {
+    std::cout << "  →  PASS ✓\n";
+  } else {
+    std::cout << "  →  FAIL ✗ (" << total_mismatches << " mismatch"
+              << (total_mismatches != 1 ? "es" : "") << ")\n";
   }
   std::cout << "══════════════════════════════════════════════════════\n";
 
-  const bool overall_pass =
-      all_fw_ok && (ref_dir ? total_mismatches == 0 : true);
+  const bool overall_pass = all_fw_ok && total_mismatches == 0;
   return overall_pass ? EXIT_SUCCESS : EXIT_FAILURE;
 }
