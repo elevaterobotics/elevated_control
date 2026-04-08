@@ -29,8 +29,13 @@ inline void Stop(std::array<OutSomanet50t*, kNumJoints>& out_somanet,
   }
 }
 
-// SDO read helper (wraps ec_SDOread from SOEM)
+// SDO read helpers (wrap ec_SDOread from SOEM)
 std::optional<std::int32_t> ReadSDOValue(std::uint16_t slave,
+                                         std::uint16_t index,
+                                         std::uint8_t subindex);
+
+// Read a string-typed SDO object (e.g. 0x100A Software Version).
+std::optional<std::string> ReadSDOString(std::uint16_t slave,
                                          std::uint16_t index,
                                          std::uint8_t subindex);
 

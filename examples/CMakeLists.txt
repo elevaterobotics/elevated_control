@@ -1,3 +1,18 @@
+add_library(config_verification_helpers OBJECT config_verification_helpers.cpp)
+target_include_directories(config_verification_helpers PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR})
+
+add_executable(config_verification config_verification.cpp
+  $<TARGET_OBJECTS:config_verification_helpers>)
+target_link_libraries(config_verification PRIVATE ${PROJECT_NAME})
+target_include_directories(config_verification PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${PROJECT_SOURCE_DIR}/external/SOEM
+  ${PROJECT_SOURCE_DIR}/external/SOEM/soem
+  ${PROJECT_SOURCE_DIR}/external/SOEM/osal
+  ${PROJECT_SOURCE_DIR}/external/SOEM/osal/linux
+  ${PROJECT_SOURCE_DIR}/external/SOEM/oshw/linux)
+
 add_executable(basic_usage basic_usage.cpp)
 target_link_libraries(basic_usage PRIVATE ${PROJECT_NAME})
 target_include_directories(basic_usage PRIVATE
@@ -22,7 +37,7 @@ set(EXAMPLE_CONFIG_YAMLS
   ${CMAKE_CURRENT_SOURCE_DIR}/joint_limits.yaml
   ${CMAKE_CURRENT_SOURCE_DIR}/elevate_config.yaml
 )
-foreach(exe basic_usage velocity_commands hand_guided spring_adjust)
+foreach(exe config_verification basic_usage velocity_commands hand_guided spring_adjust)
   foreach(yaml ${EXAMPLE_CONFIG_YAMLS})
     add_custom_command(
       TARGET ${exe} POST_BUILD
@@ -35,7 +50,7 @@ foreach(exe basic_usage velocity_commands hand_guided spring_adjust)
 endforeach()
 
 install(
-	TARGETS basic_usage velocity_commands hand_guided spring_adjust
+	TARGETS config_verification basic_usage velocity_commands hand_guided spring_adjust
 	RUNTIME DESTINATION examples
 )
 

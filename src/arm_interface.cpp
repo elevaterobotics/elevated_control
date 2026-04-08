@@ -70,6 +70,19 @@ std::optional<std::int32_t> ReadSDOValue(std::uint16_t slave,
   return value_holder;
 }
 
+// SDO string read (defined in state_machine.hpp, implemented here)
+std::optional<std::string> ReadSDOString(std::uint16_t slave,
+                                         std::uint16_t index,
+                                         std::uint8_t subindex) {
+  char buf[256] = {};
+  int object_size = sizeof(buf) - 1;
+  int result = ec_SDOread(slave, index, subindex, FALSE, &object_size,
+                          buf, EC_TIMEOUTRXM);
+  if (result <= 0) return std::nullopt;
+  buf[object_size] = '\0';
+  return std::string(buf, static_cast<std::size_t>(object_size));
+}
+
 constexpr bool kUseDriveReportedMechanicalReduction = false;
 
 std::optional<float> ReadDriveMechanicalReduction(std::uint16_t slave_idx) {
