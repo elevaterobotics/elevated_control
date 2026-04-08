@@ -1,4 +1,9 @@
-add_executable(config_verification config_verification.cpp)
+add_library(config_verification_helpers OBJECT config_verification_helpers.cpp)
+target_include_directories(config_verification_helpers PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR})
+
+add_executable(config_verification config_verification.cpp
+  $<TARGET_OBJECTS:config_verification_helpers>)
 target_link_libraries(config_verification PRIVATE ${PROJECT_NAME})
 target_include_directories(config_verification PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}

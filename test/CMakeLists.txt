@@ -24,3 +24,14 @@ foreach(test_name
       ENVIRONMENT "LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}:$ENV{LD_LIBRARY_PATH}"
   )
 endforeach()
+
+# config_verification helpers test (no EtherCAT / library dependency)
+add_executable(test_config_verification test_config_verification.cpp
+  $<TARGET_OBJECTS:config_verification_helpers>)
+target_link_libraries(test_config_verification PRIVATE GTest::gtest GTest::gtest_main)
+target_include_directories(test_config_verification PRIVATE
+  ${PROJECT_SOURCE_DIR}/examples)
+target_compile_definitions(test_config_verification PRIVATE
+  TEST_RESOURCES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources")
+gtest_discover_tests(test_config_verification
+  DISCOVERY_MODE PRE_TEST)

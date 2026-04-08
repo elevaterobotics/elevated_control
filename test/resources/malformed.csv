@@ -1,0 +1,9 @@
+META firmware=5.6.0
+# This file has intentionally malformed lines for testing.
+0x2001,  0,  42
+not_hex,  0,  100
+0x2002, bad_sub, 200
+0x2003,  0
+0x2004,  0,  not_a_number
+  ,  ,
+0x2005,  1,  999
