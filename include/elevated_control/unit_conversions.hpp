@@ -42,13 +42,6 @@ inline void ComputeStartupWrapOffset(std::int32_t ticks,
   wrap_value.store(wrapped - unwrapped_angle, std::memory_order_relaxed);
 }
 
-inline float InputTicksVelocityToOutputShaftRadPerS(
-    std::int32_t ticks, float mechanical_reduction,
-    std::uint32_t encoder_resolution) {
-  return (static_cast<float>(ticks) / encoder_resolution) * 2.0f *
-         static_cast<float>(M_PI) / mechanical_reduction;
-}
-
 inline std::int32_t OutputShaftRadToInputTicks(
     float output_shaft_rad, float mechanical_reduction,
     std::uint32_t encoder_resolution) {
@@ -90,7 +83,7 @@ constexpr std::int32_t kMilliRpmUnit = static_cast<std::int32_t>(0xFDB44700u);
 constexpr std::int32_t kRpmUnit = static_cast<std::int32_t>(0x00B44700u);
 
 // Values from the drive are motor-shaft speed; divide by mechanical_reduction
-// to obtain output-shaft rad/s. Unknown units fall back to legacy tick-based conversion.
+// to obtain output-shaft rad/s.
 inline float VelocityValueToOutputShaftRadPerS(
     std::int32_t velocity_value, std::int32_t si_velocity_unit,
     float mechanical_reduction, std::uint32_t encoder_resolution) {
@@ -105,8 +98,8 @@ inline float VelocityValueToOutputShaftRadPerS(
            (60.0f * mechanical_reduction);
   }
   // Tick-based conversion
-  return InputTicksVelocityToOutputShaftRadPerS(velocity_value, mechanical_reduction,
-                                                encoder_resolution);
+  spdlog::error("Unsupported si_velocity_unit: {}", si_velocity_unit);
+  return 0;
 }
 
 // Convert output-shaft rad/s to motor RPM or milli-RPM.
@@ -123,6 +116,7 @@ inline std::int32_t OutputShaftRadPerSToVelocityValue(
     return static_cast<std::int32_t>(std::lround(output_shaft_rad_per_sec * 60.0f /
                                                  (2.0f * static_cast<float>(M_PI))));
   }
+  spdlog::error("Unsupported si_velocity_unit: {}", si_velocity_unit);
   return 0;
 }
 
