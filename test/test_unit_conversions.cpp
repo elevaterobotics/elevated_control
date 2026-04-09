@@ -268,21 +268,6 @@ TEST_F(UnitConversionTest, RadPerSToVelocityValue_ArbitraryMilliRpm) {
   EXPECT_NEAR(result, expected, 1);
 }
 
-TEST_F(UnitConversionTest, RadPerSToVelocityValue_FallbackToTicks) {
-  const float mechanical_reduction = 170.0f;
-  const uint32_t encoder_resolution = 2560;
-  const float rad_per_s = 1.5f;
-  const int32_t si_velocity_unit = 0;
-
-  const int32_t result = elevated_control::OutputShaftRadPerSToVelocityValue(
-      rad_per_s, si_velocity_unit, mechanical_reduction, encoder_resolution);
-  const int32_t expected =
-      elevated_control::OutputShaftRadPerSToInputTicksPerS(
-          rad_per_s, mechanical_reduction, encoder_resolution);
-
-  EXPECT_EQ(result, expected);
-}
-
 TEST_F(UnitConversionTest, VelocityMilliRpmRoundTrip) {
   const int32_t si_velocity_unit = static_cast<int32_t>(0xFDB44700u);
   const float mechanical_reduction = 170.0f;

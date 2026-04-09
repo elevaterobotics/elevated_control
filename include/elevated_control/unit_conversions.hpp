@@ -79,14 +79,6 @@ inline float TorquePerMilleToTorqueNm(
   return torque_per_mille * mechanical_reduction * rated_torque / 1000.0f;
 }
 
-inline std::int32_t OutputShaftRadPerSToInputTicksPerS(
-    float output_shaft_rad_per_sec, float mechanical_reduction,
-    std::uint32_t encoder_resolution) {
-  return static_cast<std::int32_t>(output_shaft_rad_per_sec *
-                                   encoder_resolution * mechanical_reduction /
-                                   (2.0f * static_cast<float>(M_PI)));
-}
-
 // SDO 0x60A9 SI velocity unit encoding (CiA DS-303):
 //   Top byte = signed power-of-10 exponent, lower 3 bytes = RPM base unit.
 //   0xFDB44700 => exponent -3 => 0.001 RPM (milli-RPM)
