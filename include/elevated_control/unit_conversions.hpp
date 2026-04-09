@@ -90,23 +90,25 @@ inline std::int32_t OutputShaftRadPerSToInputTicksPerS(
 //   Top byte = signed power-of-10 exponent, lower 3 bytes = RPM base unit.
 //   0xFDB44700 => exponent -3 => 0.001 RPM (milli-RPM)
 //   0x00B44700 => exponent  0 => 1 RPM
+constexpr std::int32_t kMilliRpmUnit = static_cast<std::int32_t>(0xFDB44700u);
+constexpr std::int32_t kRpmUnit = static_cast<std::int32_t>(0x00B44700u);
+
 // Values from the drive are motor-shaft speed; divide by mechanical_reduction
 // to obtain output-shaft rad/s. Unknown units fall back to legacy tick-based conversion.
 inline float VelocityValueToOutputShaftRadPerS(
     std::int32_t velocity_value, std::int32_t si_velocity_unit,
     float mechanical_reduction, std::uint32_t encoder_resolution) {
-  constexpr std::int32_t kMilliRpmUnit =
-      static_cast<std::int32_t>(0xFDB44700u);
-  constexpr std::int32_t kRpmUnit =
-      static_cast<std::int32_t>(0x00B44700u);
+  // Milli-RPM
   if (si_velocity_unit == kMilliRpmUnit) {
     return static_cast<float>(velocity_value) * 2.0f * static_cast<float>(M_PI) /
            (60.0f * 1000.0f * mechanical_reduction);
   }
-  if (si_velocity_unit == kRpmUnit) {
+  // RPM
+  else if (si_velocity_unit == kRpmUnit) {
     return static_cast<float>(velocity_value) * 2.0f * static_cast<float>(M_PI) /
            (60.0f * mechanical_reduction);
   }
+  // Tick-based conversion
   return InputTicksVelocityToOutputShaftRadPerS(velocity_value, mechanical_reduction,
                                                 encoder_resolution);
 }
@@ -115,10 +117,6 @@ inline float VelocityValueToOutputShaftRadPerS(
 inline std::int32_t OutputShaftRadPerSToVelocityValue(
     float output_shaft_rad_per_sec, std::int32_t si_velocity_unit,
     float mechanical_reduction, std::uint32_t encoder_resolution) {
-  constexpr std::int32_t kMilliRpmUnit =
-      static_cast<std::int32_t>(0xFDB44700u);
-  constexpr std::int32_t kRpmUnit =
-      static_cast<std::int32_t>(0x00B44700u);
   if (si_velocity_unit == kMilliRpmUnit) {
     return static_cast<std::int32_t>(output_shaft_rad_per_sec *
                                      mechanical_reduction * 60.0f * 1000.0f /
