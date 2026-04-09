@@ -212,10 +212,7 @@ std::expected<void, Error> SynapticonBase::Initialize() {
   }
 
   startup_angle_wrap_flag_.clear();
-  startup_angle_wrap_flag_.reserve(num_joints_);
-  for (std::size_t i = 0; i < num_joints_; ++i) {
-    startup_angle_wrap_flag_.push_back(std::make_unique<std::once_flag>());
-  }
+  startup_angle_wrap_flag_.resize(num_joints_);
   startup_angle_wrap_value_.resize(num_joints_);
   for (auto& v : startup_angle_wrap_value_) v.store(0.0f);
 
@@ -876,7 +873,7 @@ void SynapticonBase::ControlLoop(std::stop_token stop_token) {
               configured_reductions_[joint_idx].load(),
               encoder_resolutions_[joint_idx].load());
 
-          std::call_once(*startup_angle_wrap_flag_[joint_idx], [&]() {
+          std::call_once(startup_angle_wrap_flag_[joint_idx], [&]() {
             ComputeStartupWrapOffset(
                 snapshot.position_value,
                 position_reductions_[joint_idx].load(),

@@ -173,7 +173,7 @@ class SynapticonBase {
   std::deque<std::atomic<float>> rated_torques_;
 
   // Startup angle wrap state (replaces global arrays)
-  std::vector<std::unique_ptr<std::once_flag>> startup_angle_wrap_flag_;
+  std::deque<std::once_flag> startup_angle_wrap_flag_;
   std::deque<std::atomic<float>> startup_angle_wrap_value_;
 
   // Thread-safe command buffers
