@@ -295,17 +295,6 @@ std::expected<void, Error> SynapticonBase::Initialize() {
     mechanical_reductions_[joint_idx - 1] = *drive_reduction;
     position_reductions_[joint_idx - 1] =
         (encoder_source == 2) ? 1.0f : *drive_reduction;
-    spdlog::info("Joint {}: mechanical reduction {:.6f}, encoder resolution {}",
-                 joint_idx - 1, *drive_reduction, encoder_resolution);
-    spdlog::debug(
-        "Joint {} DEBUG: si_velocity_unit=0x{:08X} ({}), mechanical_reduction={:.6f}, "
-        "position_reduction={:.6f}, encoder_resolution={}, rated_torque={:.4f}, "
-        "encoder_source={}",
-        joint_idx - 1, static_cast<std::uint32_t>(*si_velocity_unit),
-        *si_velocity_unit, mechanical_reductions_[joint_idx - 1].load(),
-        position_reductions_[joint_idx - 1].load(),
-        encoder_resolutions_[joint_idx - 1].load(),
-        rated_torques_[joint_idx - 1].load(), encoder_source);
   }
 
   // Request operational state
@@ -557,11 +546,6 @@ std::expected<void, Error> SynapticonBase::SetVelocityCommand(
     std::int32_t si_vel = si_velocity_units_[i].load();
     // Convert to Synapticon's expected unit
     std::int32_t converted = OutputShaftRadPerSToVelocityValue(velocities[i], si_vel);
-    spdlog::debug(
-        "SetVelocityCommand joint {}: input_rad_s={:.6f}, si_velocity_unit=0x{:08X} ({}), "
-        "mech_red={:.6f}, enc_res={}, PDO TargetVelocity(int32)={}",
-        i, velocities[i], static_cast<std::uint32_t>(si_vel), si_vel, cfg_red,
-        enc_res, converted);
     threadsafe_commands_velocities_[i] = static_cast<float>(converted);
   }
   const int64_t now_ns =
@@ -869,11 +853,6 @@ void SynapticonBase::ControlLoop(std::stop_token stop_token) {
       }
 
       if (pdo_exchange_count_.load() >= kMinPdoExchanges) {
-        static auto last_debug_log = std::chrono::steady_clock::time_point{};
-        const auto now_dbg = std::chrono::steady_clock::now();
-        const bool should_log_debug =
-            (now_dbg - last_debug_log) >= std::chrono::milliseconds(500);
-        if (should_log_debug) last_debug_log = now_dbg;
 
         for (std::size_t joint_idx = 0; joint_idx < num_joints_; ++joint_idx) {
           const auto& snapshot = in_somanet_snapshot_[joint_idx];
@@ -899,21 +878,6 @@ void SynapticonBase::ControlLoop(std::stop_token stop_token) {
               rated_torques_[joint_idx].load() *
               mechanical_reductions_[joint_idx].load();
           state_accelerations_[joint_idx] = 0.0f;
-
-          if (should_log_debug) {
-            spdlog::debug(
-                "ControlLoop joint {} state: raw_pos_ticks={}, raw_vel={}, "
-                "pos_reduction={:.6f}, enc_res={}, wrap_value={:.6f}, "
-                "computed_pos_rad={:.6f}, computed_vel_rad_s={:.6f}, "
-                "si_vel_unit=0x{:08X}, mech_red={:.6f}",
-                joint_idx, snapshot.position_value, snapshot.velocity_value,
-                position_reductions_[joint_idx].load(),
-                encoder_resolutions_[joint_idx].load(),
-                startup_angle_wrap_value_[joint_idx].load(std::memory_order_relaxed),
-                state_positions_[joint_idx], state_velocities_[joint_idx],
-                static_cast<std::uint32_t>(si_velocity_units_[joint_idx].load()),
-                mechanical_reductions_[joint_idx].load());
-          }
         }
       }
     }
@@ -1046,14 +1010,6 @@ void SynapticonBase::BaseStateMachineStep(std::size_t joint_idx,
         if (!mode_switch) {
           out_somanet_[joint_idx]->Controlword = kNormalOpBrakesOff;
         }
-        spdlog::debug(
-            "BaseStateMachineStep joint {} VELOCITY TIMED OUT: "
-            "TargetVelocity=0, OpMode={}, Controlword=0x{:04X}, "
-            "feedback VelocityValue={}, feedback OpModeDisplay={}",
-            joint_idx, out_somanet_[joint_idx]->OpMode,
-            out_somanet_[joint_idx]->Controlword,
-            in_somanet_[joint_idx]->VelocityValue,
-            in_somanet_[joint_idx]->OpModeDisplay);
       } else {
         out_somanet_[joint_idx]->TargetVelocity = static_cast<std::int32_t>(
             threadsafe_commands_velocities_[joint_idx].load());
@@ -1062,17 +1018,6 @@ void SynapticonBase::BaseStateMachineStep(std::size_t joint_idx,
         if (!mode_switch) {
           out_somanet_[joint_idx]->Controlword = kNormalOpBrakesOff;
         }
-        spdlog::debug(
-            "BaseStateMachineStep joint {} VELOCITY: "
-            "TargetVelocity={}, cmd_buf_f={:.1f}, OpMode={}, Controlword=0x{:04X}, "
-            "mode_switch={}, feedback VelocityValue={}, feedback OpModeDisplay={}",
-            joint_idx, out_somanet_[joint_idx]->TargetVelocity,
-            threadsafe_commands_velocities_[joint_idx].load(),
-            out_somanet_[joint_idx]->OpMode,
-            out_somanet_[joint_idx]->Controlword,
-            mode_switch,
-            in_somanet_[joint_idx]->VelocityValue,
-            in_somanet_[joint_idx]->OpModeDisplay);
       }
     }
   } else if (control_mode_[joint_idx] == ControlMode::kPosition) {

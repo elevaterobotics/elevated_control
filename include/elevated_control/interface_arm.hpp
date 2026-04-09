@@ -28,10 +28,8 @@
 
 namespace elevated_control {
 
-// Full-arm interface. Position and velocity use the same output-shaft frame as SynapticonBase:
-// rad and rad/s. Torque *commands* (SetTorqueCommand, SendCommand in kTorque) are newton-meters (Nm)
-// at the output shaft, not per mille; the base class documents ‰ for generic SynapticonBase.
-// Torque feedback arrays remain Nm. SetSpringSetpoint takes load in newtons (N).
+// Full 7-dof arm interface. Position and velocity use the same output-shaft frame as SynapticonBase:
+// Position in rad, velocity in rad/s, torque in Nm.
 class ArmInterface : public SynapticonBase {
  public:
   struct Config : SynapticonBaseConfig {

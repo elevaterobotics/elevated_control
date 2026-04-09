@@ -123,10 +123,6 @@ inline std::int32_t OutputShaftRadPerSToVelocityValue(
     return static_cast<std::int32_t>(std::lround(output_shaft_rad_per_sec * 60.0f /
                                                  (2.0f * static_cast<float>(M_PI))));
   }
-  spdlog::error(
-      "OutputShaftRadPerSToVelocityValue: unhandled si_velocity_unit {} "
-      "(supported: RPM [{}] or milliRPM [{}])",
-      si_velocity_unit, kRpmUnit, kMilliRpmUnit);
   return 0;
 }
 

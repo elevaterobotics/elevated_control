@@ -49,7 +49,7 @@ struct SynapticonBaseConfig {
 // Units:
 //   Position commands / feedback, and JointLimitsInfo: radians (rad).
 //   Velocity commands / feedback: rad/s.
-//   Torque commands: per mille (‰) of rated drive torque, clamped to about [-1000, 1000],
+//   Torque commands: per mille (‰) of rated drive torque, clamped to [-1000, 1000],
 //     written as CiA 402 Target Torque. Torque feedback is Nm at the output shaft.
 //   Acceleration feedback: currently always 0; would be rad/s² if implemented.
 //   StartControlLoop: control_rate_hz is Hertz (Hz).
@@ -118,7 +118,7 @@ class SynapticonBase {
       const std::vector<float>& time_from_start);
 
   // -- State queries --
-  // Positions: rad; velocities: rad/s; torques: Nm; accelerations: placeholder (0).
+  // Positions: rad; velocities: rad/s; torques: Nm; accelerations: not implemented
   std::expected<std::vector<float>, Error> GetPositions() const;
   std::expected<std::vector<float>, Error> GetVelocities() const;
   std::expected<std::vector<float>, Error> GetTorques() const;

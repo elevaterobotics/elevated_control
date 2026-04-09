@@ -5,8 +5,6 @@
 #include <thread>
 
 int main() {
-  spdlog::set_level(spdlog::level::debug);
-
   elevated_control::SingleJointInterface::Config cfg;
   cfg.network_interface = "eno0";
 
