@@ -108,8 +108,7 @@ inline float VelocityValueToOutputShaftRadPerS(
 
 // Convert output-shaft rad/s to motor RPM or milli-RPM.
 inline std::int32_t OutputShaftRadPerSToVelocityValue(
-    float output_shaft_rad_per_sec, std::int32_t si_velocity_unit,
-    float mechanical_reduction, std::uint32_t encoder_resolution) {
+    float output_shaft_rad_per_sec, std::int32_t si_velocity_unit) {
   if (si_velocity_unit == kMilliRpmUnit) {
     // Convert rad/s to milliRPM, mechanical_reduction is automatically applied in the drive
     return static_cast<std::int32_t>(std::lround(output_shaft_rad_per_sec *

@@ -240,22 +240,21 @@ TEST_F(UnitConversionTest, VelocityValueToRadPerS_FallbackToTicks) {
 TEST_F(UnitConversionTest, RadPerSToVelocityValue_ZeroMilliRpm) {
   const int32_t si_velocity_unit = static_cast<int32_t>(0xFDB44700u);
   const int32_t result =
-      elevated_control::OutputShaftRadPerSToVelocityValue(0.0f, si_velocity_unit,
-                                                          170.0f, 2560);
+      elevated_control::OutputShaftRadPerSToVelocityValue(0.0f, si_velocity_unit);
   EXPECT_EQ(result, 0);
 }
 
 TEST_F(UnitConversionTest, RadPerSToVelocityValue_PositiveMilliRpm) {
   const int32_t si_velocity_unit = static_cast<int32_t>(0xFDB44700u);
   const int32_t result = elevated_control::OutputShaftRadPerSToVelocityValue(
-      2.0f * static_cast<float>(M_PI) / 170.0f, si_velocity_unit, 170.0f, 2560);
+      2.0f * static_cast<float>(M_PI) / 170.0f, si_velocity_unit);
   EXPECT_NEAR(result, 60000, 1);
 }
 
 TEST_F(UnitConversionTest, RadPerSToVelocityValue_NegativeMilliRpm) {
   const int32_t si_velocity_unit = static_cast<int32_t>(0xFDB44700u);
   const int32_t result = elevated_control::OutputShaftRadPerSToVelocityValue(
-      -2.0f * static_cast<float>(M_PI) / 170.0f, si_velocity_unit, 170.0f, 2560);
+      -2.0f * static_cast<float>(M_PI) / 170.0f, si_velocity_unit);
   EXPECT_NEAR(result, -60000, 1);
 }
 
@@ -264,7 +263,7 @@ TEST_F(UnitConversionTest, RadPerSToVelocityValue_ArbitraryMilliRpm) {
   const int32_t expected = static_cast<int32_t>(
       1.0f * 170.0f * 60.0f * 1000.0f / (2.0f * static_cast<float>(M_PI)));
   const int32_t result = elevated_control::OutputShaftRadPerSToVelocityValue(
-      1.0f, si_velocity_unit, 170.0f, 2560);
+      1.0f, si_velocity_unit);
   EXPECT_NEAR(result, expected, 1);
 }
 
@@ -276,8 +275,7 @@ TEST_F(UnitConversionTest, VelocityMilliRpmRoundTrip) {
 
   const int32_t velocity_value =
       elevated_control::OutputShaftRadPerSToVelocityValue(
-          original_rad_per_s, si_velocity_unit, mechanical_reduction,
-          encoder_resolution);
+          original_rad_per_s, si_velocity_unit);
   const float round_tripped =
       elevated_control::VelocityValueToOutputShaftRadPerS(
           velocity_value, si_velocity_unit, mechanical_reduction,
@@ -316,8 +314,7 @@ TEST_F(UnitConversionTest, VelocityValueToRadPerS_NegativeRpm) {
 TEST_F(UnitConversionTest, RadPerSToVelocityValue_ZeroRpm) {
   const int32_t si_velocity_unit = static_cast<int32_t>(0x00B44700u);
   const int32_t result =
-      elevated_control::OutputShaftRadPerSToVelocityValue(0.0f, si_velocity_unit,
-                                                          170.0f, 2560);
+      elevated_control::OutputShaftRadPerSToVelocityValue(0.0f, si_velocity_unit);
   EXPECT_EQ(result, 0);
 }
 
@@ -325,14 +322,14 @@ TEST_F(UnitConversionTest, RadPerSToVelocityValue_PositiveRpm) {
   // output-shaft 2*PI/170 rad/s -> motor-shaft 60 RPM
   const int32_t si_velocity_unit = static_cast<int32_t>(0x00B44700u);
   const int32_t result = elevated_control::OutputShaftRadPerSToVelocityValue(
-      2.0f * static_cast<float>(M_PI) / 170.0f, si_velocity_unit, 170.0f, 2560);
+      2.0f * static_cast<float>(M_PI) / 170.0f, si_velocity_unit);
   EXPECT_NEAR(result, 60, 1);
 }
 
 TEST_F(UnitConversionTest, RadPerSToVelocityValue_NegativeRpm) {
   const int32_t si_velocity_unit = static_cast<int32_t>(0x00B44700u);
   const int32_t result = elevated_control::OutputShaftRadPerSToVelocityValue(
-      -2.0f * static_cast<float>(M_PI) / 170.0f, si_velocity_unit, 170.0f, 2560);
+      -2.0f * static_cast<float>(M_PI) / 170.0f, si_velocity_unit);
   EXPECT_NEAR(result, -60, 1);
 }
 
@@ -344,8 +341,7 @@ TEST_F(UnitConversionTest, VelocityRpmRoundTrip) {
 
   const int32_t velocity_value =
       elevated_control::OutputShaftRadPerSToVelocityValue(
-          original_rad_per_s, si_velocity_unit, mechanical_reduction,
-          encoder_resolution);
+          original_rad_per_s, si_velocity_unit);
   const float round_tripped =
       elevated_control::VelocityValueToOutputShaftRadPerS(
           velocity_value, si_velocity_unit, mechanical_reduction,

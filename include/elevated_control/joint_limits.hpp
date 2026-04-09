@@ -146,8 +146,7 @@ inline void SetVelocityWithLimits(
   }
   output_velocity = velocity_filter.Filter(output_velocity);
   out_somanet->TargetVelocity = OutputShaftRadPerSToVelocityValue(
-      output_velocity, si_velocity_unit, mechanical_reduction,
-      encoder_resolution);
+      output_velocity, si_velocity_unit);
   out_somanet->OpMode = kCyclicVelocityMode;
   out_somanet->VelocityOffset = 0;
 }

@@ -556,8 +556,7 @@ std::expected<void, Error> SynapticonBase::SetVelocityCommand(
     std::uint32_t enc_res = encoder_resolutions_[i].load();
     std::int32_t si_vel = si_velocity_units_[i].load();
     // Convert to Synapticon's expected unit
-    std::int32_t converted = OutputShaftRadPerSToVelocityValue(velocities[i], si_vel,
-                                                               cfg_red, enc_res);
+    std::int32_t converted = OutputShaftRadPerSToVelocityValue(velocities[i], si_vel);
     spdlog::debug(
         "SetVelocityCommand joint {}: input_rad_s={:.6f}, si_velocity_unit=0x{:08X} ({}), "
         "mech_red={:.6f}, enc_res={}, PDO TargetVelocity(int32)={}",
@@ -637,8 +636,7 @@ std::expected<void, Error> SynapticonBase::SendCommand(
       case ControlMode::kVelocity:
         threadsafe_commands_velocities_[i] = static_cast<float>(
             OutputShaftRadPerSToVelocityValue(
-                joint_commands[i], si_velocity_units_[i].load(), mech_red,
-                enc_res));
+                joint_commands[i], si_velocity_units_[i].load()));
         last_velocity_write_time_ns_[i].store(
             std::chrono::steady_clock::now().time_since_epoch().count(),
             std::memory_order_release);

@@ -363,8 +363,7 @@ std::expected<void, Error> ArmInterface::SetVelocityCommand(
     std::uint32_t enc_res = encoder_resolutions_[i].load();
     threadsafe_commands_velocities_[i] = static_cast<float>(
         OutputShaftRadPerSToVelocityValue(velocities[i],
-                                          si_velocity_units_[i].load(), cfg_red,
-                                          enc_res));
+                                          si_velocity_units_[i].load()));
   }
   const int64_t now_ns =
       std::chrono::steady_clock::now().time_since_epoch().count();
@@ -444,8 +443,7 @@ std::expected<void, Error> ArmInterface::SendCommand(
       case ControlLevel::kVelocity:
         threadsafe_commands_velocities_[i] = static_cast<float>(
             OutputShaftRadPerSToVelocityValue(
-                joint_commands[i], si_velocity_units_[i].load(), mech_red,
-                enc_res));
+                joint_commands[i], si_velocity_units_[i].load()));
         last_velocity_write_time_ns_[i].store(
             std::chrono::steady_clock::now().time_since_epoch().count(),
             std::memory_order_release);
@@ -493,8 +491,7 @@ std::expected<void, Error> ArmInterface::SendCommand(
       case ControlLevel::kVelocity:
         threadsafe_commands_velocities_[i] = static_cast<float>(
             OutputShaftRadPerSToVelocityValue(
-                joint_commands[j], si_velocity_units_[i].load(), mech_red,
-                enc_res));
+                joint_commands[j], si_velocity_units_[i].load()));
         last_velocity_write_time_ns_[i].store(
             std::chrono::steady_clock::now().time_since_epoch().count(),
             std::memory_order_release);
