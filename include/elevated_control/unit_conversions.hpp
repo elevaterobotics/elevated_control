@@ -1,12 +1,16 @@
-// Copyright (c) 2025 Elevate Robotics Inc
+// Copyright (c) 2026 Elevate Robotics Inc
 
 #pragma once
 
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <spdlog/spdlog.h>
 
 namespace elevated_control {
+
+// These functions assume the velocity encoder is on the motor shaft,
+// the position encoder is on the output shaft.
 
 // Compute raw angle from encoder ticks. Wrap state parameters allow per-instance
 // startup wrapping (previously kept in global arrays).
@@ -36,13 +40,6 @@ inline void ComputeStartupWrapOffset(std::int32_t ticks,
     wrapped += 2.0f * static_cast<float>(M_PI);
   }
   wrap_value.store(wrapped - unwrapped_angle, std::memory_order_relaxed);
-}
-
-inline float InputTicksVelocityToOutputShaftRadPerS(
-    std::int32_t ticks, float mechanical_reduction,
-    std::uint32_t encoder_resolution) {
-  return (static_cast<float>(ticks) / encoder_resolution) * 2.0f *
-         static_cast<float>(M_PI) / mechanical_reduction;
 }
 
 inline std::int32_t OutputShaftRadToInputTicks(
@@ -78,41 +75,49 @@ inline float TorquePerMilleToTorqueNm(
   return torque_per_mille * mechanical_reduction * rated_torque / 1000.0f;
 }
 
-inline std::int32_t OutputShaftRadPerSToInputTicksPerS(
-    float output_shaft_rad_per_sec, float mechanical_reduction,
-    std::uint32_t encoder_resolution) {
-  return static_cast<std::int32_t>(output_shaft_rad_per_sec *
-                                   encoder_resolution * mechanical_reduction /
-                                   (2.0f * static_cast<float>(M_PI)));
-}
+// SDO 0x60A9 SI velocity unit encoding (CiA DS-303):
+//   Top byte = signed power-of-10 exponent, lower 3 bytes = RPM base unit.
+//   0xFDB44700 => exponent -3 => 0.001 RPM (milli-RPM)
+//   0x00B44700 => exponent  0 => 1 RPM
+constexpr std::int32_t kMilliRpmUnit = static_cast<std::int32_t>(0xFDB44700u);
+constexpr std::int32_t kRpmUnit = static_cast<std::int32_t>(0x00B44700u);
 
-// Synapticon Velocity actual/demand: 0x60A9 = 0xFDB44700 => 0.001 RPM user units.
-// Unknown units fall back to legacy tick-based conversion.
+// Values from the drive are motor-shaft speed; divide by mechanical_reduction
+// to obtain output-shaft rad/s.
 inline float VelocityValueToOutputShaftRadPerS(
     std::int32_t velocity_value, std::int32_t si_velocity_unit,
     float mechanical_reduction, std::uint32_t encoder_resolution) {
-  constexpr std::int32_t kMilliRpmUnit =
-      static_cast<std::int32_t>(0xFDB44700u);
+  // Milli-RPM
   if (si_velocity_unit == kMilliRpmUnit) {
     return static_cast<float>(velocity_value) * 2.0f * static_cast<float>(M_PI) /
-           (60.0f * 1000.0f);
+           (60.0f * 1000.0f * mechanical_reduction);
   }
-  return InputTicksVelocityToOutputShaftRadPerS(velocity_value, mechanical_reduction,
-                                                encoder_resolution);
+  // RPM
+  else if (si_velocity_unit == kRpmUnit) {
+    return static_cast<float>(velocity_value) * 2.0f * static_cast<float>(M_PI) /
+           (60.0f * mechanical_reduction);
+  }
+  // Tick-based conversion
+  spdlog::error("Unsupported si_velocity_unit: {}", si_velocity_unit);
+  return 0;
 }
 
+// Convert output-shaft rad/s to motor RPM or milli-RPM.
 inline std::int32_t OutputShaftRadPerSToVelocityValue(
-    float output_shaft_rad_per_sec, std::int32_t si_velocity_unit,
-    float mechanical_reduction, std::uint32_t encoder_resolution) {
-  constexpr std::int32_t kMilliRpmUnit =
-      static_cast<std::int32_t>(0xFDB44700u);
+    float output_shaft_rad_per_sec, std::int32_t si_velocity_unit) {
   if (si_velocity_unit == kMilliRpmUnit) {
-    return static_cast<std::int32_t>(output_shaft_rad_per_sec * 60.0f * 1000.0f /
-                                     (2.0f * static_cast<float>(M_PI)));
+    // Convert rad/s to milliRPM, mechanical_reduction is automatically applied in the drive
+    return static_cast<std::int32_t>(std::lround(output_shaft_rad_per_sec *
+                                                60.0f * 1000.0f /
+                                                (2.0f * static_cast<float>(M_PI))));
   }
-  return OutputShaftRadPerSToInputTicksPerS(output_shaft_rad_per_sec,
-                                            mechanical_reduction,
-                                            encoder_resolution);
+  if (si_velocity_unit == kRpmUnit) {
+    // Convert rad/s to RPM, mechanical_reduction is automatically applied in the drive
+    return static_cast<std::int32_t>(std::lround(output_shaft_rad_per_sec * 60.0f /
+                                                 (2.0f * static_cast<float>(M_PI))));
+  }
+  spdlog::error("Unsupported si_velocity_unit: {}", si_velocity_unit);
+  return 0;
 }
 
 inline float SpringPotTicksToPayloadKg(const std::int32_t spring_pot_ticks) {
