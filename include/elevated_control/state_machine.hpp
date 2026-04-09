@@ -49,12 +49,10 @@ inline void HandleFault(const InSomanet50t* in_somanet,
 
 inline void HandleShutdown(OutSomanet50t* out_somanet,
                            ControlMode control_mode,
-                           bool mode_switch_in_progress,
-                           bool hold_in_shutdown) {
+                           bool mode_switch_in_progress) {
   Stop(out_somanet, true);
 
-  if (!hold_in_shutdown &&
-      (control_mode != ControlMode::kQuickStop) &&
+  if ((control_mode != ControlMode::kQuickStop) &&
       (control_mode != ControlMode::kUndefined) &&
       !mode_switch_in_progress) {
     out_somanet->Controlword = 0b00000110;
