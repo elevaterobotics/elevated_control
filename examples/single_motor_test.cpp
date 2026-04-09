@@ -1,6 +1,7 @@
 #include "elevated_control/interface_single_joint.hpp"
 
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <thread>
 
@@ -50,13 +51,33 @@ int main() {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
 
+  // Read position after velocity command
+  pos = motor.GetPosition();
+  if (pos) {
+    float delta = *pos - initial_pos;
+    spdlog::info("Post-velocity position: {:.6f} rad", *pos);
+    spdlog::info("Position delta: {:.6f} rad (expected ~0.6 rad)", delta);
+  }
+
+  // Move backwards by pi/2 using position control
+  pos = motor.GetPosition();
+  if (pos) {
+    const float target = *pos - static_cast<float>(M_PI / 2.0f);
+    spdlog::info("Commanding position {:.6f} rad (current {:.6f} - pi/2)", target, *pos);
+    motor.SwitchControlMode(elevated_control::ControlMode::kPosition);
+    auto cmd = motor.SetPosition(target);
+    if (!cmd) {
+      spdlog::error("SetPosition failed: {}", cmd.error().message);
+    }
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+  }
+
   // Read final position
   pos = motor.GetPosition();
   if (pos) {
     float delta = *pos - initial_pos;
     spdlog::info("Final position: {:.6f} rad", *pos);
-    spdlog::info("Position delta: {:.6f} rad (expected ~0.3 rad)", delta);
-    spdlog::info("Ratio actual/expected: {:.2f}x", delta / 0.3f);
+    spdlog::info("Total position delta: {:.6f} rad", delta);
   }
 
   motor.StopControlLoop();
