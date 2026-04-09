@@ -86,28 +86,47 @@ inline std::int32_t OutputShaftRadPerSToInputTicksPerS(
                                    (2.0f * static_cast<float>(M_PI)));
 }
 
-// Synapticon Velocity actual/demand: 0x60A9 = 0xFDB44700 => 0.001 RPM user units.
-// Unknown units fall back to legacy tick-based conversion.
+// SDO 0x60A9 SI velocity unit encoding (CiA DS-303):
+//   Top byte = signed power-of-10 exponent, lower 3 bytes = RPM base unit.
+//   0xFDB44700 => exponent -3 => 0.001 RPM (milli-RPM)
+//   0x00B44700 => exponent  0 => 1 RPM
+// Values from the drive are motor-shaft speed; divide by mechanical_reduction
+// to obtain output-shaft rad/s. Unknown units fall back to legacy tick-based conversion.
 inline float VelocityValueToOutputShaftRadPerS(
     std::int32_t velocity_value, std::int32_t si_velocity_unit,
     float mechanical_reduction, std::uint32_t encoder_resolution) {
   constexpr std::int32_t kMilliRpmUnit =
       static_cast<std::int32_t>(0xFDB44700u);
+  constexpr std::int32_t kRpmUnit =
+      static_cast<std::int32_t>(0x00B44700u);
   if (si_velocity_unit == kMilliRpmUnit) {
     return static_cast<float>(velocity_value) * 2.0f * static_cast<float>(M_PI) /
-           (60.0f * 1000.0f);
+           (60.0f * 1000.0f * mechanical_reduction);
+  }
+  if (si_velocity_unit == kRpmUnit) {
+    return static_cast<float>(velocity_value) * 2.0f * static_cast<float>(M_PI) /
+           (60.0f * mechanical_reduction);
   }
   return InputTicksVelocityToOutputShaftRadPerS(velocity_value, mechanical_reduction,
                                                 encoder_resolution);
 }
 
+// Convert output-shaft rad/s to motor RPM or milli-RPM (multiply by mechanical_reduction).
 inline std::int32_t OutputShaftRadPerSToVelocityValue(
     float output_shaft_rad_per_sec, std::int32_t si_velocity_unit,
     float mechanical_reduction, std::uint32_t encoder_resolution) {
   constexpr std::int32_t kMilliRpmUnit =
       static_cast<std::int32_t>(0xFDB44700u);
+  constexpr std::int32_t kRpmUnit =
+      static_cast<std::int32_t>(0x00B44700u);
   if (si_velocity_unit == kMilliRpmUnit) {
-    return static_cast<std::int32_t>(output_shaft_rad_per_sec * 60.0f * 1000.0f /
+    return static_cast<std::int32_t>(output_shaft_rad_per_sec *
+                                     mechanical_reduction * 60.0f * 1000.0f /
+                                     (2.0f * static_cast<float>(M_PI)));
+  }
+  if (si_velocity_unit == kRpmUnit) {
+    return static_cast<std::int32_t>(output_shaft_rad_per_sec *
+                                     mechanical_reduction * 60.0f /
                                      (2.0f * static_cast<float>(M_PI)));
   }
   return OutputShaftRadPerSToInputTicksPerS(output_shaft_rad_per_sec,

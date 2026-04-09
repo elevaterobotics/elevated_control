@@ -5,6 +5,8 @@
 #include <thread>
 
 int main() {
+  spdlog::set_level(spdlog::level::debug);
+
   elevated_control::SingleJointInterface::Config cfg;
   cfg.network_interface = "eno0";
 
@@ -30,11 +32,14 @@ int main() {
 
   // Read initial position
   auto pos = motor.GetPosition();
+  float initial_pos = 0.0f;
   if (pos) {
-    spdlog::info("Position: {:.4f} rad", *pos);
+    initial_pos = *pos;
+    spdlog::info("Initial position: {:.6f} rad", *pos);
   }
 
   // Send a slow velocity command for 3 seconds
+  spdlog::info("Commanding velocity 0.1 rad/s for 3 seconds (expected delta: 0.3 rad)");
   motor.SwitchControlMode(elevated_control::ControlMode::kVelocity);
   const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(3);
   while (std::chrono::steady_clock::now() < end) {
@@ -49,7 +54,10 @@ int main() {
   // Read final position
   pos = motor.GetPosition();
   if (pos) {
-    spdlog::info("Final position: {:.4f} rad", *pos);
+    float delta = *pos - initial_pos;
+    spdlog::info("Final position: {:.6f} rad", *pos);
+    spdlog::info("Position delta: {:.6f} rad (expected ~0.3 rad)", delta);
+    spdlog::info("Ratio actual/expected: {:.2f}x", delta / 0.3f);
   }
 
   motor.StopControlLoop();

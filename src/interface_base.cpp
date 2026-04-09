@@ -70,8 +70,6 @@ std::optional<std::string> ReadSDOString(std::uint16_t slave,
   return std::string(buf, static_cast<std::size_t>(object_size));
 }
 
-constexpr bool kUseDriveReportedMechanicalReduction = false;
-
 std::optional<float> ReadDriveMechanicalReduction(std::uint16_t slave_idx) {
   const auto gear_ratio_num = ReadSDOValue(slave_idx, 0x6091, 0x01);
   const auto gear_ratio_den = ReadSDOValue(slave_idx, 0x6091, 0x02);
@@ -182,13 +180,13 @@ std::expected<void, Error> SynapticonBase::Initialize() {
   state_torques_.assign(num_joints_, std::numeric_limits<float>::quiet_NaN());
   state_accelerations_.assign(num_joints_, std::numeric_limits<float>::quiet_NaN());
 
-  configured_reductions_.resize(num_joints_);
+  mechanical_reductions_.resize(num_joints_);
   position_reductions_.resize(num_joints_);
   si_velocity_units_.resize(num_joints_);
   encoder_resolutions_.resize(num_joints_);
   rated_torques_.resize(num_joints_);
   for (std::size_t i = 0; i < num_joints_; ++i) {
-    configured_reductions_[i] = 1.0f;
+    mechanical_reductions_[i] = 1.0f;
     position_reductions_[i] = 1.0f;
     si_velocity_units_[i] = 0;
     encoder_resolutions_[i] = 1;
@@ -263,8 +261,6 @@ std::expected<void, Error> SynapticonBase::Initialize() {
           "No encoder configured for joint " + std::to_string(joint_idx)});
     }
     encoder_resolutions_[joint_idx - 1] = encoder_resolution;
-    position_reductions_[joint_idx - 1] =
-        (encoder_source == 2) ? 1.0f : configured_reductions_[joint_idx - 1].load();
 
     const auto si_velocity_unit =
         ReadSDOValue(static_cast<std::uint16_t>(joint_idx), 0x60A9, 0x00);
@@ -287,26 +283,29 @@ std::expected<void, Error> SynapticonBase::Initialize() {
     }
     rated_torques_[joint_idx - 1] = static_cast<float>(*rated_result) / 1000.0f;
 
-    const float configured_reduction =
-        configured_reductions_.at(joint_idx - 1).load();
     const auto drive_reduction = ReadDriveMechanicalReduction(
         static_cast<std::uint16_t>(joint_idx));
-    if (kUseDriveReportedMechanicalReduction) {
-      if (drive_reduction) {
-        configured_reductions_.at(joint_idx - 1) = *drive_reduction;
-        if (std::abs(configured_reduction - *drive_reduction) > 1e-6f) {
-          spdlog::warn(
-              "Overriding configured mechanical reduction for joint {} from "
-              "{:.6f} to drive-reported 0x6091 ratio {:.6f}",
-              joint_idx - 1, configured_reduction, *drive_reduction);
-        }
-      } else {
-        spdlog::warn(
-            "Failed to read valid 0x6091 gear ratio for joint {}, keeping "
-            "configured mechanical reduction {:.6f}",
-            joint_idx - 1, configured_reduction);
-      }
+    if (!drive_reduction) {
+      ec_close();
+      return std::unexpected(
+          Error{ErrorCode::kEtherCATError,
+                "Failed to read valid 0x6091 gear ratio for joint " +
+                    std::to_string(joint_idx)});
     }
+    mechanical_reductions_[joint_idx - 1] = *drive_reduction;
+    position_reductions_[joint_idx - 1] =
+        (encoder_source == 2) ? 1.0f : *drive_reduction;
+    spdlog::info("Joint {}: mechanical reduction {:.6f}, encoder resolution {}",
+                 joint_idx - 1, *drive_reduction, encoder_resolution);
+    spdlog::debug(
+        "Joint {} DEBUG: si_velocity_unit=0x{:08X} ({}), mechanical_reduction={:.6f}, "
+        "position_reduction={:.6f}, encoder_resolution={}, rated_torque={:.4f}, "
+        "encoder_source={}",
+        joint_idx - 1, static_cast<std::uint32_t>(*si_velocity_unit),
+        *si_velocity_unit, mechanical_reductions_[joint_idx - 1].load(),
+        position_reductions_[joint_idx - 1].load(),
+        encoder_resolutions_[joint_idx - 1].load(),
+        rated_torques_[joint_idx - 1].load(), encoder_source);
   }
 
   // Request operational state
@@ -553,12 +552,17 @@ std::expected<void, Error> SynapticonBase::SetVelocityCommand(
   }
 
   for (std::size_t i = 0; i < num_joints_; ++i) {
-    float cfg_red = configured_reductions_[i].load();
+    float cfg_red = mechanical_reductions_[i].load();
     std::uint32_t enc_res = encoder_resolutions_[i].load();
-    threadsafe_commands_velocities_[i] = static_cast<float>(
-        OutputShaftRadPerSToVelocityValue(velocities[i],
-                                          si_velocity_units_[i].load(), cfg_red,
-                                          enc_res));
+    std::int32_t si_vel = si_velocity_units_[i].load();
+    auto converted = OutputShaftRadPerSToVelocityValue(velocities[i], si_vel,
+                                                       cfg_red, enc_res);
+    spdlog::debug(
+        "SetVelocityCommand joint {}: input_rad_s={:.6f}, si_velocity_unit=0x{:08X} ({}), "
+        "mech_red={:.6f}, enc_res={}, converted_value={}",
+        i, velocities[i], static_cast<std::uint32_t>(si_vel), si_vel, cfg_red,
+        enc_res, converted);
+    threadsafe_commands_velocities_[i] = static_cast<float>(converted);
   }
   const int64_t now_ns =
       std::chrono::steady_clock::now().time_since_epoch().count();
@@ -619,7 +623,7 @@ std::expected<void, Error> SynapticonBase::SendCommand(
   }
 
   for (std::size_t i = 0; i < num_joints_; ++i) {
-    float mech_red = configured_reductions_[i].load();
+    float mech_red = mechanical_reductions_[i].load();
     std::uint32_t enc_res = encoder_resolutions_[i].load();
 
     switch (control_mode_[i]) {
@@ -866,11 +870,17 @@ void SynapticonBase::ControlLoop(std::stop_token stop_token) {
       }
 
       if (pdo_exchange_count_.load() >= kMinPdoExchanges) {
+        static auto last_debug_log = std::chrono::steady_clock::time_point{};
+        const auto now_dbg = std::chrono::steady_clock::now();
+        const bool should_log_debug =
+            (now_dbg - last_debug_log) >= std::chrono::milliseconds(500);
+        if (should_log_debug) last_debug_log = now_dbg;
+
         for (std::size_t joint_idx = 0; joint_idx < num_joints_; ++joint_idx) {
           const auto& snapshot = in_somanet_snapshot_[joint_idx];
           state_velocities_[joint_idx] = VelocityValueToOutputShaftRadPerS(
               snapshot.velocity_value, si_velocity_units_[joint_idx].load(),
-              configured_reductions_[joint_idx].load(),
+              mechanical_reductions_[joint_idx].load(),
               encoder_resolutions_[joint_idx].load());
 
           std::call_once(startup_angle_wrap_flag_[joint_idx], [&]() {
@@ -888,8 +898,23 @@ void SynapticonBase::ControlLoop(std::stop_token stop_token) {
           state_torques_[joint_idx] =
               (snapshot.torque_value / 1000.0f) *
               rated_torques_[joint_idx].load() *
-              configured_reductions_[joint_idx].load();
+              mechanical_reductions_[joint_idx].load();
           state_accelerations_[joint_idx] = 0.0f;
+
+          if (should_log_debug) {
+            spdlog::debug(
+                "ControlLoop joint {} state: raw_pos_ticks={}, raw_vel={}, "
+                "pos_reduction={:.6f}, enc_res={}, wrap_value={:.6f}, "
+                "computed_pos_rad={:.6f}, computed_vel_rad_s={:.6f}, "
+                "si_vel_unit=0x{:08X}, mech_red={:.6f}",
+                joint_idx, snapshot.position_value, snapshot.velocity_value,
+                position_reductions_[joint_idx].load(),
+                encoder_resolutions_[joint_idx].load(),
+                startup_angle_wrap_value_[joint_idx].load(std::memory_order_relaxed),
+                state_positions_[joint_idx], state_velocities_[joint_idx],
+                static_cast<std::uint32_t>(si_velocity_units_[joint_idx].load()),
+                mechanical_reductions_[joint_idx].load());
+          }
         }
       }
     }

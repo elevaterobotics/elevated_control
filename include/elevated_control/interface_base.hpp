@@ -184,7 +184,7 @@ class SynapticonBase {
   std::atomic<int> pdo_exchange_count_{0};
 
   // Per-joint mechanical params
-  std::deque<std::atomic<float>> configured_reductions_;
+  std::deque<std::atomic<float>> mechanical_reductions_;
   std::deque<std::atomic<float>> position_reductions_;
   std::deque<std::atomic<std::int32_t>> si_velocity_units_;
   std::deque<std::atomic<std::uint32_t>> encoder_resolutions_;

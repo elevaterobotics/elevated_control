@@ -359,7 +359,7 @@ std::expected<void, Error> ArmInterface::SetVelocityCommand(
 
   for (std::size_t i = 0; i < kNumJoints; ++i) {
     if (i == kSpringAdjustIdx) continue;
-    float cfg_red = configured_reductions_[i].load();
+    float cfg_red = mechanical_reductions_[i].load();
     std::uint32_t enc_res = encoder_resolutions_[i].load();
     threadsafe_commands_velocities_[i] = static_cast<float>(
         OutputShaftRadPerSToVelocityValue(velocities[i],
@@ -431,7 +431,7 @@ std::expected<void, Error> ArmInterface::SendCommand(
   }
 
   for (std::size_t i = 0; i < kNumJoints; ++i) {
-    float mech_red = configured_reductions_[i].load();
+    float mech_red = mechanical_reductions_[i].load();
     std::uint32_t enc_res = encoder_resolutions_[i].load();
 
     switch (control_level_[i]) {
@@ -480,7 +480,7 @@ std::expected<void, Error> ArmInterface::SendCommand(
       return std::unexpected(
           Error{ErrorCode::kInvalidArgument, "Invalid joint index"});
     }
-    float mech_red = configured_reductions_[i].load();
+    float mech_red = mechanical_reductions_[i].load();
     std::uint32_t enc_res = encoder_resolutions_[i].load();
 
     switch (control_level_[i]) {
@@ -741,7 +741,7 @@ bool ArmInterface::OnNormalOperation(std::size_t joint_idx, bool mode_switch) {
           float joint_accel =
               dynamic_sim_state_->output.estimated_accelerations[joint_idx];
           joint_vel = -kAdmittanceVelocityMultiplier *
-                      configured_reductions_[joint_idx].load() *
+                      mechanical_reductions_[joint_idx].load() *
                       joint_admittances_[joint_idx]->CalculateVelocity(
                           joint_accel, T_ext);
         } else {
@@ -855,7 +855,7 @@ bool ArmInterface::OnNormalOperation(std::size_t joint_idx, bool mode_switch) {
         out_somanet_[joint_idx]->TorqueOffset += static_cast<std::int16_t>(
             kTorqueNmToPerMilleMultiplier *
             TorqueNmToTorquePerMille(user_torque,
-                                     configured_reductions_[joint_idx],
+                                     mechanical_reductions_[joint_idx],
                                      rated_torques_[joint_idx]));
 
         float torque = 0.0f;
@@ -921,7 +921,7 @@ bool ArmInterface::OnNormalOperation(std::size_t joint_idx, bool mode_switch) {
         out_somanet_[joint_idx]->TorqueOffset += static_cast<std::int16_t>(
             kTorqueNmToPerMilleMultiplier *
             TorqueNmToTorquePerMille(user_torque,
-                                     configured_reductions_[joint_idx],
+                                     mechanical_reductions_[joint_idx],
                                      rated_torques_[joint_idx]));
         out_somanet_[joint_idx]->TorqueOffset =
             static_cast<std::int16_t>(elevation_inertial_torque_filter_.Filter(
@@ -987,7 +987,7 @@ bool ArmInterface::OnNormalOperation(std::size_t joint_idx, bool mode_switch) {
 float ArmInterface::CalculateUserTorque(const InSomanet50t* in_somanet,
                                         std::size_t joint_idx) {
   float measured_torque_nm = TorquePerMilleToTorqueNm(
-      in_somanet->TorqueValue, configured_reductions_[joint_idx],
+      in_somanet->TorqueValue, mechanical_reductions_[joint_idx],
       rated_torques_[joint_idx]);
   float expected_torque = dynamic_sim_state_->output.tau_required.at(joint_idx);
   return expected_torque - measured_torque_nm;
@@ -1002,7 +1002,7 @@ void ArmInterface::ApplyGravComp(std::size_t joint_idx,
         kTorqueNmToPerMilleMultiplier *
         TorqueNmToTorquePerMille(
             dynamic_sim_state_->output.tau_required.at(joint_idx),
-            configured_reductions_[joint_idx], rated_torques_[joint_idx]));
+            mechanical_reductions_[joint_idx], rated_torques_[joint_idx]));
   } else if (joint_idx == kWristPitchIdx) {
     ApplyWristPitchHoldTorque(in_somanet, out_somanet);
   } else if (joint_idx == kWristRollIdx) {
@@ -1020,7 +1020,7 @@ void ArmInterface::ApplyWristPitchHoldTorque(const InSomanet50t* in_somanet,
   float drake_ff = kTorqueNmToPerMilleMultiplier *
                    TorqueNmToTorquePerMille(
                        dynamic_sim_state_->output.tau_required.at(kWristPitchIdx),
-                       configured_reductions_[kWristPitchIdx],
+                       mechanical_reductions_[kWristPitchIdx],
                        rated_torques_[kWristPitchIdx]);
   out_somanet->TorqueOffset = static_cast<std::int16_t>(cosine_term + drake_ff);
 }
@@ -1053,7 +1053,7 @@ void ArmInterface::ApplyFrictionCompensation(std::size_t joint_idx) {
   float joint_velocity_rad_s = VelocityValueToOutputShaftRadPerS(
       in_somanet_[joint_idx]->VelocityValue,
       si_velocity_units_[joint_idx].load(),
-      configured_reductions_[joint_idx].load(),
+      mechanical_reductions_[joint_idx].load(),
       encoder_resolutions_[joint_idx].load());
 
   std::int32_t torque_sign = 0;
