@@ -114,20 +114,20 @@ inline float VelocityValueToOutputShaftRadPerS(
                                                 encoder_resolution);
 }
 
-// Convert output-shaft rad/s to motor RPM or milli-RPM (multiply by mechanical_reduction).
+// Convert output-shaft rad/s to motor RPM or milli-RPM.
 inline std::int32_t OutputShaftRadPerSToVelocityValue(
     float output_shaft_rad_per_sec, std::int32_t si_velocity_unit,
     float mechanical_reduction, std::uint32_t encoder_resolution) {
   if (si_velocity_unit == kMilliRpmUnit) {
     // Convert rad/s to milliRPM, mechanical_reduction is automatically applied in the drive
-    return static_cast<std::int32_t>(output_shaft_rad_per_sec *
-                                     60.0f * 1000.0f /
-                                     (2.0f * static_cast<float>(M_PI)));
+    return static_cast<std::int32_t>(std::lround(output_shaft_rad_per_sec *
+                                                60.0f * 1000.0f /
+                                                (2.0f * static_cast<float>(M_PI))));
   }
   if (si_velocity_unit == kRpmUnit) {
     // Convert rad/s to RPM, mechanical_reduction is automatically applied in the drive
-    return static_cast<std::int32_t>(output_shaft_rad_per_sec * 60.0f /
-                                     (2.0f * static_cast<float>(M_PI)));
+    return static_cast<std::int32_t>(std::lround(output_shaft_rad_per_sec * 60.0f /
+                                                 (2.0f * static_cast<float>(M_PI))));
   }
   spdlog::error(
       "OutputShaftRadPerSToVelocityValue: unhandled si_velocity_unit {} "

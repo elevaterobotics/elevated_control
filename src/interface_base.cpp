@@ -555,14 +555,14 @@ std::expected<void, Error> SynapticonBase::SetVelocityCommand(
     float cfg_red = mechanical_reductions_[i].load();
     std::uint32_t enc_res = encoder_resolutions_[i].load();
     std::int32_t si_vel = si_velocity_units_[i].load();
-    auto converted = 1 /* rpm */; //OutputShaftRadPerSToVelocityValue(velocities[i], si_vel,
-                        //                               cfg_red, enc_res);
-    const auto converted_i32 = static_cast<std::int32_t>(converted);
+    // Convert to Synapticon's expected unit
+    std::int32_t converted = OutputShaftRadPerSToVelocityValue(velocities[i], si_vel,
+                                                               cfg_red, enc_res);
     spdlog::debug(
         "SetVelocityCommand joint {}: input_rad_s={:.6f}, si_velocity_unit=0x{:08X} ({}), "
-        "mech_red={:.6f}, enc_res={}, converted_value={}, PDO TargetVelocity(int32)={}",
+        "mech_red={:.6f}, enc_res={}, PDO TargetVelocity(int32)={}",
         i, velocities[i], static_cast<std::uint32_t>(si_vel), si_vel, cfg_red,
-        enc_res, converted, converted_i32);
+        enc_res, converted);
     threadsafe_commands_velocities_[i] = static_cast<float>(converted);
   }
   const int64_t now_ns =

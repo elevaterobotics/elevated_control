@@ -43,7 +43,8 @@ int main() {
   motor.SwitchControlMode(elevated_control::ControlMode::kVelocity);
   const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(3);
   while (std::chrono::steady_clock::now() < end) {
-    auto cmd = motor.SetVelocity(0.1f);
+    // This gets rounded to the nearest integer so it's not extremely accurate at low speeds.
+    auto cmd = motor.SetVelocity(0.2f /* rad/s */);
     if (!cmd) {
       spdlog::error("SetVelocity failed: {}", cmd.error().message);
       break;
