@@ -9,7 +9,8 @@
 namespace elevated_control {
 
 // Convenience wrapper around SynapticonBase for single-motor testing.
-// Provides scalar (non-vector) API for position, velocity, and torque commands.
+// Scalar API; units match SynapticonBase: SetPosition/SetVelocity in rad and rad/s;
+// SetTorque in per mille (‰) of rated torque; GetTorque in Nm at the output shaft.
 class SingleJointInterface : public SynapticonBase {
  public:
   struct Config : SynapticonBaseConfig {
@@ -18,7 +19,7 @@ class SingleJointInterface : public SynapticonBase {
 
   explicit SingleJointInterface(const Config& config);
 
-  // Scalar convenience API
+  // Scalar convenience API (rad, rad/s, ‰ for set-torque; Nm for GetTorque).
   std::expected<void, Error> SetPosition(float position);
   std::expected<void, Error> SetVelocity(float velocity);
   std::expected<void, Error> SetTorque(float torque);

@@ -28,6 +28,10 @@
 
 namespace elevated_control {
 
+// Full-arm interface. Position and velocity use the same output-shaft frame as SynapticonBase:
+// rad and rad/s. Torque *commands* (SetTorqueCommand, SendCommand in kTorque) are newton-meters (Nm)
+// at the output shaft, not per mille; the base class documents ‰ for generic SynapticonBase.
+// Torque feedback arrays remain Nm. SetSpringSetpoint takes load in newtons (N).
 class ArmInterface : public SynapticonBase {
  public:
   struct Config : SynapticonBaseConfig {
@@ -57,6 +61,7 @@ class ArmInterface : public SynapticonBase {
   using SynapticonBase::SwitchControlMode;
 
   // -- Streaming commands (JointFloatArray overloads) --
+  // Units: rad, rad/s, Nm (torque) per joint; spring_adjust slot uses NaN — see SetSpringSetpoint.
 
   std::expected<void, Error> SetPositionCommand(
       const JointFloatArray& positions,
@@ -85,9 +90,11 @@ class ArmInterface : public SynapticonBase {
 
   // -- Spring --
 
+  // load_in_newtons: desired spring load in newtons (N).
   std::expected<void, Error> SetSpringSetpoint(float load_in_newtons);
 
   // -- State queries (JointFloatArray wrappers) --
+  // Same units as base GetPositions / GetVelocities / GetTorques / GetAccelerations.
 
   std::expected<JointFloatArray, Error> GetPositionsArray() const;
   std::expected<JointFloatArray, Error> GetVelocitiesArray() const;

@@ -23,6 +23,7 @@
 
 namespace elevated_control {
 
+// Position limits in the same units as GetPositions / SetPositionCommand (output-shaft rad).
 struct JointLimitsInfo {
   float min_position;
   float max_position;
@@ -42,6 +43,18 @@ struct SynapticonBaseConfig {
   std::string joint_limits_yaml;
 };
 
+// EtherCAT / CiA 402 driver interface. All joint-space quantities are on the output shaft
+// (after gearbox), unless a derived class documents otherwise.
+//
+// Units:
+//   Position commands / feedback, and JointLimitsInfo: radians (rad).
+//   Velocity commands / feedback: rad/s.
+//   Torque commands: per mille (‰) of rated drive torque, clamped to about [-1000, 1000],
+//     written as CiA 402 Target Torque. Torque feedback is Nm at the output shaft.
+//   Acceleration feedback: currently always 0; would be rad/s² if implemented.
+//   StartControlLoop: control_rate_hz is Hertz (Hz).
+//
+// SetTrajectory is not implemented; no unit contract until it is.
 class SynapticonBase {
  public:
   explicit SynapticonBase(const SynapticonBaseConfig& config);
@@ -53,6 +66,7 @@ class SynapticonBase {
   // -- Lifecycle --
 
   virtual std::expected<void, Error> Initialize();
+  // control_rate_hz: cyclic EtherCAT / control thread rate [Hz].
   virtual std::expected<void, Error> StartControlLoop(float control_rate_hz);
   virtual std::expected<void, Error> StopControlLoop();
   bool IsControlLoopReady() const noexcept;
@@ -77,30 +91,34 @@ class SynapticonBase {
       const std::vector<ControlMode>& per_joint_modes);
 
   // -- Streaming commands --
-
+  // positions: output-shaft rad per joint.
   virtual std::expected<void, Error> SetPositionCommand(
       const std::vector<float>& positions,
       std::function<bool()> halt_condition = nullptr);
+  // velocities: output-shaft rad/s per joint.
   virtual std::expected<void, Error> SetVelocityCommand(
       const std::vector<float>& velocities,
       std::function<bool()> halt_condition = nullptr);
+  // torques: per mille (‰) of rated torque per joint
   virtual std::expected<void, Error> SetTorqueCommand(
       const std::vector<float>& torques,
       std::function<bool()> halt_condition = nullptr);
 
   // -- Generic command (per current mode) --
-
+  // joint_commands: same units as SetPositionCommand / SetVelocityCommand / SetTorqueCommand for
+  // kPosition / kVelocity / kTorque respectively.
   virtual std::expected<void, Error> SendCommand(
       const std::vector<float>& joint_commands);
 
   // -- Trajectory --
+  // Not implemented; parameters reserved for future use.
 
   std::expected<void, Error> SetTrajectory(
       const std::vector<float>& positions,
       const std::vector<float>& time_from_start);
 
   // -- State queries --
-
+  // Positions: rad; velocities: rad/s; torques: Nm; accelerations: placeholder (0).
   std::expected<std::vector<float>, Error> GetPositions() const;
   std::expected<std::vector<float>, Error> GetVelocities() const;
   std::expected<std::vector<float>, Error> GetTorques() const;
