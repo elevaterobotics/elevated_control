@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Elevate Robotics Inc
+// Copyright (c) 2026 Elevate Robotics Inc
 
 #pragma once
 
@@ -8,6 +8,9 @@
 #include <spdlog/spdlog.h>
 
 namespace elevated_control {
+
+// These functions assume the velocity encoder is on the motor shaft,
+// the position encoder is on the output shaft.
 
 // Compute raw angle from encoder ticks. Wrap state parameters allow per-instance
 // startup wrapping (previously kept in global arrays).
