@@ -951,7 +951,7 @@ void SynapticonBase::BaseStateMachineStep(std::size_t joint_idx,
   // Switch on disabled
   if ((statusword & 0x004F) == 0x0040) {
     HandleShutdown(out_somanet_[joint_idx], control_mode_[joint_idx],
-                   mode_switch_in_progress_, hold_in_sd);
+                   mode_switch_in_progress_);
     return;
   }
   // Ready to switch on

@@ -34,19 +34,22 @@ class StateMachineHelperTest : public ::testing::Test {
   std::array<std::unique_ptr<OutSomanet50t>, kNumJoints> out_somanet_objects_{};
 };
 
-TEST_F(StateMachineHelperTest, HandleShutdownKeepsJointDisabledWhileLatched) {
+TEST_F(StateMachineHelperTest,
+       HandleShutdownStopsMotionCommandsBeforeTransition) {
   constexpr std::size_t kJointIdx = kWristPitchIdx;
 
   HandleShutdown(out_somanet_ptrs_[kJointIdx], ControlMode::kTorque,
-                 false /* mode_switch_in_progress */,
-                 true /* hold_in_shutdown */);
+                 false /* mode_switch_in_progress */);
 
   EXPECT_EQ(out_somanet_ptrs_[kJointIdx]->TargetVelocity, 0);
   EXPECT_EQ(out_somanet_ptrs_[kJointIdx]->VelocityOffset, 0);
   EXPECT_EQ(out_somanet_ptrs_[kJointIdx]->TargetTorque, 0);
   EXPECT_EQ(out_somanet_ptrs_[kJointIdx]->TorqueOffset, 0);
   EXPECT_EQ(out_somanet_ptrs_[kJointIdx]->OpMode, kCyclicVelocityMode);
-  EXPECT_EQ(out_somanet_ptrs_[kJointIdx]->Controlword, 0);
+  // In the "Switch on disabled" state, HandleShutdown first stops motion
+  // commands, then transitions the drive toward "Ready to switch on" by
+  // writing 0b00000110.
+  EXPECT_EQ(out_somanet_ptrs_[kJointIdx]->Controlword, 0b00000110);
 }
 
 TEST_F(StateMachineHelperTest, HandleSwitchOnReturnsLatchedJointToShutdown) {
@@ -82,13 +85,7 @@ TEST_F(StateMachineHelperTest, ClearingHoldRestoresNormalEnableProgression) {
   constexpr std::size_t kJointIdx = kWristPitchIdx;
 
   HandleShutdown(out_somanet_ptrs_[kJointIdx], ControlMode::kTorque,
-                 false /* mode_switch_in_progress */,
-                 true /* hold_in_shutdown */);
-  EXPECT_EQ(out_somanet_ptrs_[kJointIdx]->Controlword, 0);
-
-  HandleShutdown(out_somanet_ptrs_[kJointIdx], ControlMode::kTorque,
-                 false /* mode_switch_in_progress */,
-                 false /* hold_in_shutdown */);
+                 false /* mode_switch_in_progress */);
   EXPECT_EQ(out_somanet_ptrs_[kJointIdx]->Controlword, 0b00000110);
 
   HandleSwitchOn(out_somanet_ptrs_[kJointIdx], false /* hold_in_shutdown */);
