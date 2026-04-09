@@ -31,6 +31,6 @@ inline constexpr unsigned int kCyclicLoopSleepUs = 5000;
 inline constexpr int kMinPdoExchanges = 200;
 
 // Expected EtherCAT slave device name
-inline constexpr char kExpectedSlaveName[] = "SOMANET";
+inline constexpr std::string_view kExpectedSlaveName = "SOMANET";
 
 }  // namespace elevated_control

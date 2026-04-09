@@ -234,7 +234,7 @@ std::expected<void, Error> SynapticonBase::Initialize() {
 
   // Verify slaves and read per-joint parameters
   for (std::size_t joint_idx = 1; joint_idx <= num_joints_; ++joint_idx) {
-    if (std::strcmp(ec_slave[joint_idx].name, kExpectedSlaveName) != 0) {
+    if (std::strcmp(ec_slave[joint_idx].name, kExpectedSlaveName.data()) != 0) {
       ec_close();
       return std::unexpected(
           Error{ErrorCode::kEtherCATError,
@@ -741,7 +741,7 @@ void SynapticonBase::WaitForGoodProcessData() {
 void SynapticonBase::HandleStartupFaults() {
   ec_readstate();
   for (int slave = 1; slave <= ec_slavecount; slave++) {
-    if (std::strcmp(ec_slave[slave].name, kExpectedSlaveName) != 0) continue;
+    if (std::strcmp(ec_slave[slave].name, kExpectedSlaveName.data()) != 0) continue;
     if (ec_slave[slave].state == (EC_STATE_SAFE_OP + EC_STATE_ERROR)) {
       spdlog::warn("Slave {} is in SAFE_OP + ERROR, attempting ack", slave);
       ec_slave[slave].state = (EC_STATE_SAFE_OP + EC_STATE_ACK);
