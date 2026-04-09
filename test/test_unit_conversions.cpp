@@ -246,22 +246,28 @@ TEST_F(UnitConversionTest, RadPerSToVelocityValue_ZeroMilliRpm) {
 
 TEST_F(UnitConversionTest, RadPerSToVelocityValue_PositiveMilliRpm) {
   const int32_t si_velocity_unit = static_cast<int32_t>(0xFDB44700u);
+  const int32_t expected = static_cast<int32_t>(std::lround(
+      (2.0f * static_cast<float>(M_PI) / 170.0f) * 60.0f * 1000.0f /
+      (2.0f * static_cast<float>(M_PI))));
   const int32_t result = elevated_control::OutputShaftRadPerSToVelocityValue(
       2.0f * static_cast<float>(M_PI) / 170.0f, si_velocity_unit);
-  EXPECT_NEAR(result, 60000, 1);
+  EXPECT_NEAR(result, expected, 1);
 }
 
 TEST_F(UnitConversionTest, RadPerSToVelocityValue_NegativeMilliRpm) {
   const int32_t si_velocity_unit = static_cast<int32_t>(0xFDB44700u);
+  const int32_t expected = static_cast<int32_t>(std::lround(
+      (-2.0f * static_cast<float>(M_PI) / 170.0f) * 60.0f * 1000.0f /
+      (2.0f * static_cast<float>(M_PI))));
   const int32_t result = elevated_control::OutputShaftRadPerSToVelocityValue(
       -2.0f * static_cast<float>(M_PI) / 170.0f, si_velocity_unit);
-  EXPECT_NEAR(result, -60000, 1);
+  EXPECT_NEAR(result, expected, 1);
 }
 
 TEST_F(UnitConversionTest, RadPerSToVelocityValue_ArbitraryMilliRpm) {
   const int32_t si_velocity_unit = static_cast<int32_t>(0xFDB44700u);
-  const int32_t expected = static_cast<int32_t>(
-      1.0f * 170.0f * 60.0f * 1000.0f / (2.0f * static_cast<float>(M_PI)));
+  const int32_t expected = static_cast<int32_t>(std::lround(
+      1.0f * 60.0f * 1000.0f / (2.0f * static_cast<float>(M_PI))));
   const int32_t result = elevated_control::OutputShaftRadPerSToVelocityValue(
       1.0f, si_velocity_unit);
   EXPECT_NEAR(result, expected, 1);
@@ -281,7 +287,10 @@ TEST_F(UnitConversionTest, VelocityMilliRpmRoundTrip) {
           velocity_value, si_velocity_unit, mechanical_reduction,
           encoder_resolution);
 
-  EXPECT_NEAR(round_tripped, original_rad_per_s, 2e-4f);
+  const float expected = static_cast<float>(velocity_value) * 2.0f *
+                         static_cast<float>(M_PI) /
+                         (60.0f * 1000.0f * mechanical_reduction);
+  EXPECT_NEAR(round_tripped, expected, 1e-6f);
 }
 
 // --- VelocityValueToOutputShaftRadPerS RPM tests ---
@@ -319,18 +328,23 @@ TEST_F(UnitConversionTest, RadPerSToVelocityValue_ZeroRpm) {
 }
 
 TEST_F(UnitConversionTest, RadPerSToVelocityValue_PositiveRpm) {
-  // output-shaft 2*PI/170 rad/s -> motor-shaft 60 RPM
   const int32_t si_velocity_unit = static_cast<int32_t>(0x00B44700u);
+  const int32_t expected = static_cast<int32_t>(std::lround(
+      (2.0f * static_cast<float>(M_PI) / 170.0f) * 60.0f /
+      (2.0f * static_cast<float>(M_PI))));
   const int32_t result = elevated_control::OutputShaftRadPerSToVelocityValue(
       2.0f * static_cast<float>(M_PI) / 170.0f, si_velocity_unit);
-  EXPECT_NEAR(result, 60, 1);
+  EXPECT_NEAR(result, expected, 1);
 }
 
 TEST_F(UnitConversionTest, RadPerSToVelocityValue_NegativeRpm) {
   const int32_t si_velocity_unit = static_cast<int32_t>(0x00B44700u);
+  const int32_t expected = static_cast<int32_t>(std::lround(
+      (-2.0f * static_cast<float>(M_PI) / 170.0f) * 60.0f /
+      (2.0f * static_cast<float>(M_PI))));
   const int32_t result = elevated_control::OutputShaftRadPerSToVelocityValue(
       -2.0f * static_cast<float>(M_PI) / 170.0f, si_velocity_unit);
-  EXPECT_NEAR(result, -60, 1);
+  EXPECT_NEAR(result, expected, 1);
 }
 
 TEST_F(UnitConversionTest, VelocityRpmRoundTrip) {
@@ -347,6 +361,8 @@ TEST_F(UnitConversionTest, VelocityRpmRoundTrip) {
           velocity_value, si_velocity_unit, mechanical_reduction,
           encoder_resolution);
 
-  // int32 truncation: 1 RPM ≈ 0.1047 rad/s at motor, /170 ≈ 6.2e-4 rad/s at output
-  EXPECT_NEAR(round_tripped, original_rad_per_s, 7e-4f);
+  const float expected = static_cast<float>(velocity_value) * 2.0f *
+                         static_cast<float>(M_PI) /
+                         (60.0f * mechanical_reduction);
+  EXPECT_NEAR(round_tripped, expected, 1e-6f);
 }
