@@ -557,11 +557,12 @@ std::expected<void, Error> SynapticonBase::SetVelocityCommand(
     std::int32_t si_vel = si_velocity_units_[i].load();
     auto converted = OutputShaftRadPerSToVelocityValue(velocities[i], si_vel,
                                                        cfg_red, enc_res);
+    const auto converted_i32 = static_cast<std::int32_t>(converted);
     spdlog::debug(
         "SetVelocityCommand joint {}: input_rad_s={:.6f}, si_velocity_unit=0x{:08X} ({}), "
-        "mech_red={:.6f}, enc_res={}, converted_value={}",
+        "mech_red={:.6f}, enc_res={}, converted_value={}, PDO TargetVelocity(int32)={}",
         i, velocities[i], static_cast<std::uint32_t>(si_vel), si_vel, cfg_red,
-        enc_res, converted);
+        enc_res, converted, converted_i32);
     threadsafe_commands_velocities_[i] = static_cast<float>(converted);
   }
   const int64_t now_ns =
@@ -1047,6 +1048,14 @@ void SynapticonBase::BaseStateMachineStep(std::size_t joint_idx,
         if (!mode_switch) {
           out_somanet_[joint_idx]->Controlword = kNormalOpBrakesOff;
         }
+        spdlog::debug(
+            "BaseStateMachineStep joint {} VELOCITY TIMED OUT: "
+            "TargetVelocity=0, OpMode={}, Controlword=0x{:04X}, "
+            "feedback VelocityValue={}, feedback OpModeDisplay={}",
+            joint_idx, out_somanet_[joint_idx]->OpMode,
+            out_somanet_[joint_idx]->Controlword,
+            in_somanet_[joint_idx]->VelocityValue,
+            in_somanet_[joint_idx]->OpModeDisplay);
       } else {
         out_somanet_[joint_idx]->TargetVelocity = static_cast<std::int32_t>(
             threadsafe_commands_velocities_[joint_idx].load());
@@ -1055,6 +1064,17 @@ void SynapticonBase::BaseStateMachineStep(std::size_t joint_idx,
         if (!mode_switch) {
           out_somanet_[joint_idx]->Controlword = kNormalOpBrakesOff;
         }
+        spdlog::debug(
+            "BaseStateMachineStep joint {} VELOCITY: "
+            "TargetVelocity={}, cmd_buf_f={:.1f}, OpMode={}, Controlword=0x{:04X}, "
+            "mode_switch={}, feedback VelocityValue={}, feedback OpModeDisplay={}",
+            joint_idx, out_somanet_[joint_idx]->TargetVelocity,
+            threadsafe_commands_velocities_[joint_idx].load(),
+            out_somanet_[joint_idx]->OpMode,
+            out_somanet_[joint_idx]->Controlword,
+            mode_switch,
+            in_somanet_[joint_idx]->VelocityValue,
+            in_somanet_[joint_idx]->OpModeDisplay);
       }
     }
   } else if (control_mode_[joint_idx] == ControlMode::kPosition) {
