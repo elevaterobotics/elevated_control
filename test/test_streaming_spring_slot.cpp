@@ -1,6 +1,6 @@
 // Copyright (c) 2025 Elevate Robotics Inc
 
-#include "elevated_control/types.hpp"
+#include "elevated_control/types_arm.hpp"
 
 #include <gtest/gtest.h>
 

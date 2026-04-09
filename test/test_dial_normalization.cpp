@@ -3,7 +3,7 @@
 
 #include <gtest/gtest.h>
 
-#include "elevated_control/constants.hpp"
+#include "elevated_control/constants_arm.hpp"
 #include "elevated_control/dial_normalization.hpp"
 
 namespace {

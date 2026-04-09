@@ -1,8 +1,9 @@
 # elevated_control
 
-Pure C++ control interface for Elevate Robotics 7-DOF manipulators. Communicates
-with Synapticon drives over EtherCAT (via the bundled SOEM library) and exposes a
-simple `ArmInterface` class.
+Pure C++ control interface for Synapticon motor drives over EtherCAT (via the
+bundled SOEM library). Provides a generic N-motor base class (`SynapticonBase`)
+with specialized subclasses for the Elevate Robotics 7-DOF manipulator
+(`ArmInterface`) and single-motor testing (`SingleJointInterface`).
 
 ## Cloning
 
@@ -43,9 +44,10 @@ cmake --install .
 The build produces:
 
 - `libelevated_soem.a` -- static EtherCAT master library (SOEM/OSAL/OSHW)
-- `libelevated_control.so` -- shared library with the `ArmInterface` class
+- `libelevated_control.so` -- shared library with `SynapticonBase`, `ArmInterface`, and `SingleJointInterface`
 - `basic_usage` -- minimal example executable that waits for the control loop to be ready then reads the joint positions
 - `velocity_commands` -- waits for the control loop to be ready then send 5 seconds of slow wrist roll velocity commands
+- `single_motor_test` -- minimal single-motor example: initialize, read position, send velocity commands
 
 ## Tests
 
@@ -87,26 +89,78 @@ sudo ./my_app
 
 ## Architecture
 
-Two `std::jthread`s run inside `ArmInterface`:
+```mermaid
+classDiagram
+    class SynapticonBase {
+        +Initialize()
+        +StartControlLoop()
+        +StopControlLoop()
+        +SetPositionCommand()
+        +SetVelocityCommand()
+        +SetTorqueCommand()
+        +GetPositions()
+        #OnPreStateMachine()
+        #OnNormalOperation()
+    }
+    class ArmInterface {
+        +SetSpringSetpoint()
+        +GetButtonState()
+        +GetDialState()
+    }
+    class SingleJointInterface {
+        +SetPosition(float)
+        +SetVelocity(float)
+        +GetPosition()
+    }
+    SynapticonBase <|-- ArmInterface
+    SynapticonBase <|-- SingleJointInterface
+```
+
+**`SynapticonBase`** handles generic EtherCAT communication with any number of
+Synapticon motor drives: initialization, cyclic PDO exchange, the CiA 402 state
+machine, and streaming position/velocity/torque commands. Derived classes inject
+hardware-specific logic through virtual hooks (`OnPreStateMachine`,
+`OnNormalOperation`, `OnPostCycle`, `IsEStopEngaged`).
+
+**`ArmInterface`** (inherits `SynapticonBase`) adds 7-DOF arm-specific features:
+gravity compensation, friction compensation, hand-guided mode, spring adjust,
+dial/button GPIO, joint admittance, and the dynamic simulation thread.
+
+**`SingleJointInterface`** (inherits `SynapticonBase`) is a thin wrapper for
+single-motor testing, providing scalar convenience methods (`SetPosition`,
+`GetPosition`, etc.) that delegate to the base class vector API.
+
+Two `std::jthread`s run inside `SynapticonBase`:
 
 1. **EtherCAT control loop** -- cyclic PDO exchange at the configured rate,
-   per-joint state machine, gravity compensation, joint-limit enforcement.
-2. **Dynamic simulation** -- currently a stub (produces zero feedforward torque).
+   per-joint state machine, joint-limit enforcement.
+2. **EtherCAT error monitor** -- background thread that recovers lost slaves.
+
+`ArmInterface` adds a third thread:
+
+3. **Dynamic simulation** -- currently a stub (produces zero feedforward torque).
    Will be wired to Drake for gravity compensation and collision checking.
 
-Both threads share state through `DynamicSimState` using lock-free atomics and
-are cleanly stopped via cooperative `std::stop_token` cancellation.
+All threads share state through lock-free atomics and are cleanly stopped via
+cooperative `std::stop_token` cancellation.
 
 ## Control Modes
 
+### Base modes (available for all interfaces via `ControlMode`)
+
 | Mode | Enum | Description |
 |---|---|---|
-| Position | `kPosition` | Cyclic position (OpMode 8) |
-| Velocity | `kVelocity` | Cyclic velocity (OpMode 9) |
-| Torque | `kTorque` | Profile torque (OpMode 4) |
-| Hand-guided | `kHandGuided` | Zero-torque with friction comp, dial-controlled wrist |
-| Quick stop | `kQuickStop` | Motor brakes engaged |
-| Spring adjust | `kSpringAdjust` | PD control of internal spring via potentiometer |
+| Position | `ControlMode::kPosition` | Cyclic position (OpMode 8) |
+| Velocity | `ControlMode::kVelocity` | Cyclic velocity (OpMode 9) |
+| Torque | `ControlMode::kTorque` | Profile torque (OpMode 4) |
+| Quick stop | `ControlMode::kQuickStop` | Motor brakes engaged |
+
+### Arm-extended modes (ArmInterface only, via `ControlLevel`)
+
+| Mode | Enum | Description |
+|---|---|---|
+| Hand-guided | `ControlLevel::kHandGuided` | Zero-torque with friction comp, dial-controlled wrist |
+| Spring adjust | `ControlLevel::kSpringAdjust` | PD control of internal spring via potentiometer |
 
 ## Project Structure
 
@@ -114,27 +168,39 @@ are cleanly stopped via cooperative `std::stop_token` cancellation.
 elevated_control/
   CMakeLists.txt
   examples/
-    basic_usage.cpp         Minimal usage example (builds as executable)
-    velocity_commands.cpp   Simple velocity control example (builds as executable)
+    basic_usage.cpp              Minimal arm usage (builds as executable)
+    velocity_commands.cpp        Arm velocity control example
+    hand_guided.cpp              Arm hand-guided mode example
+    spring_adjust.cpp            Arm spring adjust example
+    single_motor_test.cpp        SingleJointInterface example
   include/elevated_control/
-    arm_interface.hpp       Main class
-    types.hpp               JointName, ControlLevel, ErrorCode, Error
-    constants.hpp           Joint indices, EtherCAT constants
-    somanet_pdo.hpp         Packed PDO structs
-    unit_conversions.hpp    Ticks <-> radians, torque conversions
-    velocity_filter.hpp     Low-pass filter
-    joint_admittance.hpp    Single-joint admittance controller
-    joint_limits.hpp        Soft joint-limit enforcement
-    config_parsing.hpp      YAML config parsing
-    state_machine.hpp       EtherCAT state machine helpers
-    dynamic_sim.hpp         Dynamic simulation stub
+    interface_base.hpp           Generic N-motor base class
+    interface_arm.hpp            7-DOF arm class (inherits SynapticonBase)
+    interface_single_joint.hpp   Single-motor class (inherits SynapticonBase)
+    types.hpp                    ControlMode, ErrorCode, Error
+    types_arm.hpp                7-DOF arm types: ControlLevel, JointName, JointArray
+    constants.hpp                Generic EtherCAT constants
+    constants_arm.hpp            7-DOF arm joint indices and tuning constants
+    somanet_pdo.hpp              Packed PDO structs
+    unit_conversions.hpp         Ticks <-> radians, torque conversions
+    velocity_filter.hpp          Low-pass filter
+    joint_admittance.hpp         Single-joint admittance controller
+    joint_limits.hpp             Soft joint-limit enforcement
+    config_parsing.hpp           YAML config parsing (arm-specific)
+    state_machine.hpp            CiA 402 state machine helpers
+    dial_normalization.hpp       Wrist dial input normalization
+    spring_adjust.hpp            Spring adjust logic
+    dynamic_sim.hpp              Dynamic simulation stub
   src/
-    arm_interface.cpp       Full implementation
+    interface_base.cpp           Base class implementation
+    interface_arm.cpp            Arm class implementation
+    interface_single_joint.cpp   Single-motor class implementation
     joint_admittance.cpp
     velocity_filter.cpp
     config_parsing.cpp
     dynamic_sim.cpp
-    osal/                   OS abstraction (from SOEM)
-    oshw/                   Hardware abstraction (from SOEM)
-    soem/                   Simple Open EtherCAT Master
+    spring_adjust.cpp
+    osal/                        OS abstraction (from SOEM)
+    oshw/                        Hardware abstraction (from SOEM)
+    soem/                        Simple Open EtherCAT Master
 ```
