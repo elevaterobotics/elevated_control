@@ -22,6 +22,7 @@ std::expected<void, Error> SingleJointInterface::SetTorque(float torque) {
 std::expected<float, Error> SingleJointInterface::GetPosition() const {
   auto result = GetPositions();
   if (!result) return std::unexpected(result.error());
+  if (result->empty()) return std::unexpected(Error{ErrorCode::kInvalidArgument, "No joints available"});
   return result->at(0);
 }
 
