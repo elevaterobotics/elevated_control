@@ -4,7 +4,7 @@
 
 #include <expected>
 
-#include "elevated_control/synapticcon_base.hpp"
+#include "elevated_control/interface_base.hpp"
 
 namespace elevated_control {
 

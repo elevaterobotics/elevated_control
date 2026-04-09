@@ -23,7 +23,7 @@
 #include "elevated_control/dynamic_sim.hpp"
 #include "elevated_control/joint_admittance.hpp"
 #include "elevated_control/spring_adjust.hpp"
-#include "elevated_control/synapticcon_base.hpp"
+#include "elevated_control/interface_base.hpp"
 #include "elevated_control/velocity_filter.hpp"
 
 namespace elevated_control {

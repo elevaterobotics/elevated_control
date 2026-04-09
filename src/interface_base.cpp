@@ -1,6 +1,6 @@
 // Copyright (c) 2025 Elevate Robotics Inc
 
-#include "elevated_control/synapticcon_base.hpp"
+#include "elevated_control/interface_base.hpp"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"

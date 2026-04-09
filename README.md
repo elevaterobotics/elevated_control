@@ -174,7 +174,7 @@ elevated_control/
     spring_adjust.cpp            Arm spring adjust example
     single_motor_test.cpp        SingleJointInterface example
   include/elevated_control/
-    synapticcon_base.hpp         Generic N-motor base class
+    interface_base.hpp           Generic N-motor base class
     interface_arm.hpp            7-DOF arm class (inherits SynapticonBase)
     interface_single_joint.hpp   Single-motor class (inherits SynapticonBase)
     types.hpp                    ControlMode, ErrorCode, Error
@@ -192,7 +192,7 @@ elevated_control/
     spring_adjust.hpp            Spring adjust logic
     dynamic_sim.hpp              Dynamic simulation stub
   src/
-    synapticcon_base.cpp         Base class implementation
+    interface_base.cpp           Base class implementation
     interface_arm.cpp            Arm class implementation
     interface_single_joint.cpp   Single-motor class implementation
     joint_admittance.cpp
