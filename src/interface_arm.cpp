@@ -650,6 +650,16 @@ void ArmInterface::OnPreStateMachine() {
   }
 
   lips_spring_position_ = in_somanet_[kSpringAdjustIdx]->PositionValue;
+  // Synapticon applies angle-wrapping to LIPS sometimes. Undo that.
+  constexpr int32_t LIPS_ENCODER_RESOLUTION = 4096;
+  if (lips_spring_position < 0)
+  {
+    lips_spring_position += LIPS_ENCODER_RESOLUTION;
+  }
+  else if (lips_spring_position >= LIPS_ENCODER_RESOLUTION)
+  {
+    lips_spring_position -= LIPS_ENCODER_RESOLUTION;
+  }
 
   hw_function_enable_ =
       static_cast<float>((*wr_roll_gpio & (1 << 16)) >> 16);
