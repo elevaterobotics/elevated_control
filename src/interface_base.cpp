@@ -555,8 +555,8 @@ std::expected<void, Error> SynapticonBase::SetVelocityCommand(
     float cfg_red = mechanical_reductions_[i].load();
     std::uint32_t enc_res = encoder_resolutions_[i].load();
     std::int32_t si_vel = si_velocity_units_[i].load();
-    auto converted = OutputShaftRadPerSToVelocityValue(velocities[i], si_vel,
-                                                       cfg_red, enc_res);
+    auto converted = 1 /* rpm */; //OutputShaftRadPerSToVelocityValue(velocities[i], si_vel,
+                        //                               cfg_red, enc_res);
     const auto converted_i32 = static_cast<std::int32_t>(converted);
     spdlog::debug(
         "SetVelocityCommand joint {}: input_rad_s={:.6f}, si_velocity_unit=0x{:08X} ({}), "

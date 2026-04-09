@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <spdlog/spdlog.h>
 
 namespace elevated_control {
 
@@ -118,18 +119,21 @@ inline std::int32_t OutputShaftRadPerSToVelocityValue(
     float output_shaft_rad_per_sec, std::int32_t si_velocity_unit,
     float mechanical_reduction, std::uint32_t encoder_resolution) {
   if (si_velocity_unit == kMilliRpmUnit) {
+    // Convert rad/s to milliRPM, mechanical_reduction is automatically applied in the drive
     return static_cast<std::int32_t>(output_shaft_rad_per_sec *
-                                     mechanical_reduction * 60.0f * 1000.0f /
+                                     60.0f * 1000.0f /
                                      (2.0f * static_cast<float>(M_PI)));
   }
   if (si_velocity_unit == kRpmUnit) {
-    return static_cast<std::int32_t>(output_shaft_rad_per_sec *
-                                     mechanical_reduction * 60.0f /
+    // Convert rad/s to RPM, mechanical_reduction is automatically applied in the drive
+    return static_cast<std::int32_t>(output_shaft_rad_per_sec * 60.0f /
                                      (2.0f * static_cast<float>(M_PI)));
   }
-  return OutputShaftRadPerSToInputTicksPerS(output_shaft_rad_per_sec,
-                                            mechanical_reduction,
-                                            encoder_resolution);
+  spdlog::error(
+      "OutputShaftRadPerSToVelocityValue: unhandled si_velocity_unit {} "
+      "(supported: RPM [{}] or milliRPM [{}])",
+      si_velocity_unit, kRpmUnit, kMilliRpmUnit);
+  return 0;
 }
 
 inline float SpringPotTicksToPayloadKg(const std::int32_t spring_pot_ticks) {
