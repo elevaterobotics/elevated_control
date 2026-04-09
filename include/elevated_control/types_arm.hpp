@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Elevate Robotics Inc
+// Copyright (c) 2026 Elevate Robotics Inc
 
 #pragma once
 
@@ -9,6 +9,8 @@
 #include <string_view>
 
 #include "elevated_control/types.hpp"
+
+// Extension of basic types for the 7-DOF arm
 
 namespace elevated_control {
 

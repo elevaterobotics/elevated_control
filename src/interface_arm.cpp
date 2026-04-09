@@ -1,6 +1,6 @@
 // Copyright (c) 2025 Elevate Robotics Inc
 
-#include "elevated_control/arm_interface.hpp"
+#include "elevated_control/interface_arm.hpp"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"

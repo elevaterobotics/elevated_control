@@ -2,8 +2,8 @@
 #include <array>
 #include <memory>
 
-#include "elevated_control/arm_constants.hpp"
-#include "elevated_control/arm_types.hpp"
+#include "elevated_control/constants_arm.hpp"
+#include "elevated_control/types_arm.hpp"
 #include "elevated_control/state_machine.hpp"
 
 using namespace elevated_control;

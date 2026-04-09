@@ -16,8 +16,8 @@
 
 #include <spdlog/spdlog.h>
 
-#include "elevated_control/arm_constants.hpp"
-#include "elevated_control/arm_types.hpp"
+#include "elevated_control/constants_arm.hpp"
+#include "elevated_control/types_arm.hpp"
 #include "elevated_control/config_parsing.hpp"
 #include "elevated_control/dial_normalization.hpp"
 #include "elevated_control/dynamic_sim.hpp"

@@ -1,6 +1,6 @@
 // Copyright (c) 2025 Elevate Robotics Inc
 
-#include "elevated_control/arm_constants.hpp"
+#include "elevated_control/constants_arm.hpp"
 #include "elevated_control/spring_adjust.hpp"
 #include "elevated_control/types.hpp"
 

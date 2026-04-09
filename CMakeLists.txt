@@ -26,8 +26,8 @@ find_package(yaml-cpp REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED
   src/synapticcon_base.cpp
-  src/single_joint_interface.cpp
-  src/arm_interface.cpp
+  src/interface_single_joint.cpp
+  src/interface_arm.cpp
   src/joint_admittance.cpp
   src/spring_adjust.cpp
   src/velocity_filter.cpp

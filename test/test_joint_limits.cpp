@@ -3,8 +3,8 @@
 #include <cstring>
 #include <limits>
 
-#include "elevated_control/arm_constants.hpp"
-#include "elevated_control/arm_types.hpp"
+#include "elevated_control/constants_arm.hpp"
+#include "elevated_control/types_arm.hpp"
 #include "elevated_control/joint_limits.hpp"
 #include "elevated_control/unit_conversions.hpp"
 

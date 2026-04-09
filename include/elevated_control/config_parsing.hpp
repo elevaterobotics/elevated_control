@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <string>
 
-#include "elevated_control/arm_types.hpp"
+#include "elevated_control/types_arm.hpp"
 
 namespace elevated_control {
 

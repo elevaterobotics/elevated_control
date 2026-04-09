@@ -1,6 +1,6 @@
 // Copyright (c) 2025 Elevate Robotics Inc
 
-#include "elevated_control/single_joint_interface.hpp"
+#include "elevated_control/interface_single_joint.hpp"
 
 namespace elevated_control {
 

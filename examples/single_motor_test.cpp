@@ -1,4 +1,4 @@
-#include "elevated_control/single_joint_interface.hpp"
+#include "elevated_control/interface_single_joint.hpp"
 
 #include <chrono>
 #include <cstdlib>
@@ -16,7 +16,7 @@ int main() {
     return EXIT_FAILURE;
   }
 
-  auto start = motor.StartControlLoop(200.0f);
+  auto start = motor.StartControlLoop(200.0f /* Hz */);
   if (!start) {
     spdlog::error("Start failed: {}", start.error().message);
     return EXIT_FAILURE;

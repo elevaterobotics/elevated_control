@@ -175,12 +175,12 @@ elevated_control/
     single_motor_test.cpp        SingleJointInterface example
   include/elevated_control/
     synapticcon_base.hpp         Generic N-motor base class
-    arm_interface.hpp            7-DOF arm class (inherits SynapticonBase)
-    single_joint_interface.hpp   Single-motor class (inherits SynapticonBase)
+    interface_arm.hpp            7-DOF arm class (inherits SynapticonBase)
+    interface_single_joint.hpp   Single-motor class (inherits SynapticonBase)
     types.hpp                    ControlMode, ErrorCode, Error
-    arm_types.hpp                Arm-specific: ControlLevel, JointName, JointArray
+    types_arm.hpp                7-DOF arm types: ControlLevel, JointName, JointArray
     constants.hpp                Generic EtherCAT constants
-    arm_constants.hpp            Arm-specific joint indices and tuning constants
+    constants_arm.hpp            7-DOF arm joint indices and tuning constants
     somanet_pdo.hpp              Packed PDO structs
     unit_conversions.hpp         Ticks <-> radians, torque conversions
     velocity_filter.hpp          Low-pass filter
@@ -193,8 +193,8 @@ elevated_control/
     dynamic_sim.hpp              Dynamic simulation stub
   src/
     synapticcon_base.cpp         Base class implementation
-    arm_interface.cpp            Arm class implementation
-    single_joint_interface.cpp   Single-motor class implementation
+    interface_arm.cpp            Arm class implementation
+    interface_single_joint.cpp   Single-motor class implementation
     joint_admittance.cpp
     velocity_filter.cpp
     config_parsing.cpp
