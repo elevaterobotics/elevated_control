@@ -166,6 +166,7 @@ class SynapticonBase {
   std::atomic<bool> in_normal_op_mode_{false};
   std::atomic<bool> require_new_command_mode_{false};
   std::atomic<bool> mode_switch_in_progress_{false};
+  // prevent_mode_change_ does not prevent QUICK_STOP mode changes
   PreventModeChange prevent_mode_change_;
   std::atomic<bool> shutdown_requested_{false};
 

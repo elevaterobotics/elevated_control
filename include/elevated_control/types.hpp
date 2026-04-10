@@ -51,6 +51,7 @@ enum class ModeChangeBlockReason {
 
 // Independent latches that can block normal controller mode switches.
 // Each subsystem sets/clears its own reason without disturbing others.
+// Should never block a transition to QUICK_STOP mode.
 struct PreventModeChange {
   std::atomic<bool> blocked_by_spring_adjust{false};
   std::atomic<bool> blocked_by_estop{false};
