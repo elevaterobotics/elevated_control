@@ -415,10 +415,11 @@ std::expected<void, Error> SynapticonBase::SwitchControlModeImpl(
       std::any_of(new_modes.begin(), new_modes.end(),
                   [](ControlMode m) { return m == ControlMode::kQuickStop; });
 
-  if (!allow_mode_change_ && !requested_quick_stop) {
+  if (!prevent_mode_change_.AllowsNormalModeSwitch() && !requested_quick_stop) {
     return std::unexpected(
         Error{ErrorCode::kModeChangeDenied,
-              "Control mode change is disallowed at this moment"});
+              "Control mode change is disallowed at this moment. Active blockers: " +
+                  prevent_mode_change_.BlockingReasonsString()});
   }
 
   struct ModeSwitchGuard {
@@ -849,7 +850,10 @@ void SynapticonBase::ControlLoop(std::stop_token stop_token) {
         }
       }
       if (estop) {
+        prevent_mode_change_.SetBlocked(ModeChangeBlockReason::kEstop);
         require_new_command_mode_ = true;
+      } else {
+        prevent_mode_change_.ClearBlocked(ModeChangeBlockReason::kEstop);
       }
 
       if (pdo_exchange_count_.load() >= kMinPdoExchanges) {
@@ -911,7 +915,8 @@ void SynapticonBase::ControlLoop(std::stop_token stop_token) {
       std::scoped_lock lock(ecat_mtx_, hw_state_mtx_);
 
       if (require_new_command_mode_) {
-        allow_mode_change_ = true;
+        // E-stop blocker is cleared above when e-stop disengages;
+        // no blanket allow needed here.
       } else {
         OnPreStateMachine();
 

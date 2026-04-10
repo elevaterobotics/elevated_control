@@ -168,10 +168,11 @@ std::expected<void, Error> ArmInterface::SwitchControlModeImpl(
       std::any_of(new_modes.begin(), new_modes.end(),
                   [](ControlLevel m) { return m == ControlLevel::kQuickStop; });
 
-  if (!allow_mode_change_ && !requested_quick_stop) {
+  if (!prevent_mode_change_.AllowsNormalModeSwitch() && !requested_quick_stop) {
     return std::unexpected(
         Error{ErrorCode::kModeChangeDenied,
-              "Control mode change is disallowed at this moment"});
+              "Control mode change is disallowed at this moment. Active blockers: " +
+                  prevent_mode_change_.BlockingReasonsString()});
   }
 
   struct ModeSwitchGuard {
@@ -238,7 +239,7 @@ std::expected<void, Error> ArmInterface::SwitchControlModeImpl(
 
   for (std::size_t i = 0; i < kNumJoints; ++i) {
     if (new_modes[i] == ControlLevel::kSpringAdjust) {
-      allow_mode_change_ = false;
+      prevent_mode_change_.SetBlocked(ModeChangeBlockReason::kSpringAdjust);
     }
   }
 
@@ -525,7 +526,7 @@ std::expected<void, Error> ArmInterface::SetSpringSetpoint(
       control_level_[kSpringAdjustIdx] == ControlLevel::kSpringAdjust;
   const bool needs_fresh_session =
       !spring_adjust_active ||
-      allow_mode_change_.load(std::memory_order_acquire);
+      !prevent_mode_change_.IsBlocked(ModeChangeBlockReason::kSpringAdjust);
   if (!needs_fresh_session || !control_loop_running_) {
     return {};
   }
@@ -673,7 +674,7 @@ void ArmInterface::OnPreStateMachine() {
 
   if (first_iteration_deadman_ && deadman_pressed_) {
     first_iteration_deadman_ = false;
-    allow_mode_change_ = false;
+    prevent_mode_change_.SetBlocked(ModeChangeBlockReason::kStuckFunctionEnable);
     prev_deadman_pressed_ = true;
     spdlog::error(
         "Function enable pressed at startup - blocking hand_guided");
@@ -683,7 +684,10 @@ void ArmInterface::OnPreStateMachine() {
   first_iteration_deadman_ = false;
 
   if (require_new_command_mode_) {
-    allow_mode_change_ = true;
+    if (!deadman_pressed_) {
+      prevent_mode_change_.ClearBlocked(
+          ModeChangeBlockReason::kStuckFunctionEnable);
+    }
     skip_cycle_ = true;
     return;
   }
@@ -695,14 +699,13 @@ void ArmInterface::OnPreStateMachine() {
     dynamic_sim_state_->input.payload_mass = 0.0f;
   }
 
-  if (control_level_[0] == ControlLevel::kHandGuided &&
-      deadman_pressed_ && !prev_deadman_pressed_) {
-    allow_mode_change_ = false;
-    prev_deadman_pressed_ = true;
-  } else if (prev_deadman_pressed_ && !deadman_pressed_) {
-    allow_mode_change_ = true;
-    prev_deadman_pressed_ = false;
+  if (!deadman_pressed_) {
+    prevent_mode_change_.ClearBlocked(
+        ModeChangeBlockReason::kStuckFunctionEnable);
   }
+
+  UpdateDeadmanModeChangeState(control_level_[0], deadman_pressed_,
+                               prev_deadman_pressed_, prevent_mode_change_);
 }
 
 bool ArmInterface::OnNormalOperation(std::size_t joint_idx, bool mode_switch) {
@@ -948,14 +951,18 @@ bool ArmInterface::OnNormalOperation(std::size_t joint_idx, bool mode_switch) {
   // --- Spring adjust ---
   if (control_level_[joint_idx] == ControlLevel::kSpringAdjust) {
     if (joint_idx == kSpringAdjustIdx) {
-      if (!allow_mode_change_) {
-        bool allow = allow_mode_change_.load();
+      if (prevent_mode_change_.IsBlocked(ModeChangeBlockReason::kSpringAdjust)) {
+        bool spring_adjust_complete = false;
         const auto target = LoadSpringAdjustSetpoint(
             spring_setpoint_target_ticks_, has_spring_setpoint_);
         if (target.has_value()) {
           float actuator_torque = SpringAdjustByLIPS(
-              *target, lips_spring_position_, allow, spring_adjust_state_);
-          allow_mode_change_ = allow;
+              *target, lips_spring_position_, spring_adjust_complete,
+              spring_adjust_state_);
+          if (spring_adjust_complete) {
+            prevent_mode_change_.ClearBlocked(
+                ModeChangeBlockReason::kSpringAdjust);
+          }
           out_somanet_[joint_idx]->TargetTorque =
               static_cast<std::int16_t>(actuator_torque);
           out_somanet_[joint_idx]->OpMode = kProfileTorqueMode;

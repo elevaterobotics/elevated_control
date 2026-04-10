@@ -11,6 +11,7 @@
 #include "elevated_control/constants.hpp"
 #include "elevated_control/somanet_pdo.hpp"
 #include "elevated_control/types.hpp"
+#include "elevated_control/types_arm.hpp"
 
 namespace elevated_control {
 
@@ -77,6 +78,23 @@ inline void HandleEnableOperation(OutSomanet50t* out_somanet,
   }
   if (!mode_switch_in_progress) {
     out_somanet->Controlword = kNormalOpBrakesOff;
+  }
+}
+
+// Updates the hand-guided mode-change blocker based on deadman switch state.
+// When entering hand-guided mode with the deadman pressed, mode changes are
+// blocked until the deadman is released. This prevents accidental mode switches
+// during hand-guided operation.
+inline void UpdateDeadmanModeChangeState(
+    ControlLevel control_level, bool deadman_pressed,
+    bool& prev_deadman_pressed, PreventModeChange& prevent_mode_change) {
+  if (control_level == ControlLevel::kHandGuided &&
+      deadman_pressed && !prev_deadman_pressed) {
+    prevent_mode_change.SetBlocked(ModeChangeBlockReason::kHandGuidedDeadman);
+    prev_deadman_pressed = true;
+  } else if (prev_deadman_pressed && !deadman_pressed) {
+    prevent_mode_change.ClearBlocked(ModeChangeBlockReason::kHandGuidedDeadman);
+    prev_deadman_pressed = false;
   }
 }
 
