@@ -76,11 +76,14 @@ inline float TorquePerMilleToTorqueNm(
 }
 
 // SDO 0x60A9 SI velocity unit encoding (CiA DS-303):
-//   Top byte = signed power-of-10 exponent, lower 3 bytes = RPM base unit.
-//   0xFDB44700 => exponent -3 => 0.001 RPM (milli-RPM)
-//   0x00B44700 => exponent  0 => 1 RPM
+//   Byte 3 = prefix (signed power-of-10), Byte 2 = SI numerator,
+//   Byte 1 = SI denominator, Byte 0 = profile-specific.
+//   RPM:   numerator 0xB4 (revolution, profile-specific), denominator 0x47 (minute)
+//   deg/s: numerator 0x41 (degree), denominator 0x03 (second)
 constexpr std::int32_t kMilliRpmUnit = static_cast<std::int32_t>(0xFDB44700u);
 constexpr std::int32_t kRpmUnit = static_cast<std::int32_t>(0x00B44700u);
+constexpr std::int32_t kMilliDegPerSUnit = static_cast<std::int32_t>(0xFD410300u);
+constexpr std::int32_t kDegPerSUnit = static_cast<std::int32_t>(0x00410300u);
 
 // Values from the drive are motor-shaft speed; divide by mechanical_reduction
 // to obtain output-shaft rad/s.
@@ -97,24 +100,41 @@ inline float VelocityValueToOutputShaftRadPerS(
     return static_cast<float>(velocity_value) * 2.0f * static_cast<float>(M_PI) /
            (60.0f * mechanical_reduction);
   }
-  // Tick-based conversion
+  // Milli-deg/s
+  else if (si_velocity_unit == kMilliDegPerSUnit) {
+    return static_cast<float>(velocity_value) * static_cast<float>(M_PI) /
+           (180.0f * 1000.0f * mechanical_reduction);
+  }
+  // deg/s
+  else if (si_velocity_unit == kDegPerSUnit) {
+    return static_cast<float>(velocity_value) * static_cast<float>(M_PI) /
+           (180.0f * mechanical_reduction);
+  }
   spdlog::error("Unsupported si_velocity_unit: {}", si_velocity_unit);
   return 0;
 }
 
-// Convert output-shaft rad/s to motor RPM or milli-RPM.
+// Convert output-shaft rad/s to the drive's velocity unit.
 inline std::int32_t OutputShaftRadPerSToVelocityValue(
     float output_shaft_rad_per_sec, std::int32_t si_velocity_unit) {
+  // mechanical reduction is automatically applied in the drive
   if (si_velocity_unit == kMilliRpmUnit) {
-    // Convert rad/s to milliRPM, mechanical_reduction is automatically applied in the drive
     return static_cast<std::int32_t>(std::lround(output_shaft_rad_per_sec *
                                                 60.0f * 1000.0f /
                                                 (2.0f * static_cast<float>(M_PI))));
   }
   if (si_velocity_unit == kRpmUnit) {
-    // Convert rad/s to RPM, mechanical_reduction is automatically applied in the drive
     return static_cast<std::int32_t>(std::lround(output_shaft_rad_per_sec * 60.0f /
                                                  (2.0f * static_cast<float>(M_PI))));
+  }
+  if (si_velocity_unit == kMilliDegPerSUnit) {
+    return static_cast<std::int32_t>(std::lround(output_shaft_rad_per_sec *
+                                                 180.0f * 1000.0f /
+                                                 static_cast<float>(M_PI)));
+  }
+  if (si_velocity_unit == kDegPerSUnit) {
+    return static_cast<std::int32_t>(std::lround(output_shaft_rad_per_sec * 180.0f /
+                                                 static_cast<float>(M_PI)));
   }
   spdlog::error("Unsupported si_velocity_unit: {}", si_velocity_unit);
   return 0;
