@@ -89,7 +89,7 @@ constexpr std::int32_t kDegPerSUnit = static_cast<std::int32_t>(0x00410300u);
 // to obtain output-shaft rad/s.
 inline float VelocityValueToOutputShaftRadPerS(
     std::int32_t velocity_value, std::int32_t si_velocity_unit,
-    float mechanical_reduction, std::uint32_t encoder_resolution) {
+    float mechanical_reduction) {
   // Milli-RPM
   if (si_velocity_unit == kMilliRpmUnit) {
     return static_cast<float>(velocity_value) * 2.0f * static_cast<float>(M_PI) /
