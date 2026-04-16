@@ -360,8 +360,6 @@ std::expected<void, Error> ArmInterface::SetVelocityCommand(
 
   for (std::size_t i = 0; i < kNumJoints; ++i) {
     if (i == kSpringAdjustIdx) continue;
-    float cfg_red = mechanical_reductions_[i].load();
-    std::uint32_t enc_res = encoder_resolutions_[i].load();
     threadsafe_commands_velocities_[i] = static_cast<float>(
         OutputShaftRadPerSToVelocityValue(velocities[i],
                                           si_velocity_units_[i].load()));
@@ -431,7 +429,6 @@ std::expected<void, Error> ArmInterface::SendCommand(
   }
 
   for (std::size_t i = 0; i < kNumJoints; ++i) {
-    float mech_red = mechanical_reductions_[i].load();
     std::uint32_t enc_res = encoder_resolutions_[i].load();
 
     switch (control_level_[i]) {
@@ -479,7 +476,6 @@ std::expected<void, Error> ArmInterface::SendCommand(
       return std::unexpected(
           Error{ErrorCode::kInvalidArgument, "Invalid joint index"});
     }
-    float mech_red = mechanical_reductions_[i].load();
     std::uint32_t enc_res = encoder_resolutions_[i].load();
 
     switch (control_level_[i]) {
@@ -1067,8 +1063,7 @@ void ArmInterface::ApplyFrictionCompensation(std::size_t joint_idx) {
   float joint_velocity_rad_s = VelocityValueToOutputShaftRadPerS(
       in_somanet_[joint_idx]->VelocityValue,
       si_velocity_units_[joint_idx].load(),
-      mechanical_reductions_[joint_idx].load(),
-      encoder_resolutions_[joint_idx].load());
+      mechanical_reductions_[joint_idx].load());
 
   std::int32_t torque_sign = 0;
   if (joint_idx == kYaw1Idx) {
