@@ -542,8 +542,6 @@ std::expected<void, Error> SynapticonBase::SetVelocityCommand(
   }
 
   for (std::size_t i = 0; i < num_joints_; ++i) {
-    float cfg_red = mechanical_reductions_[i].load();
-    std::uint32_t enc_res = encoder_resolutions_[i].load();
     std::int32_t si_vel = si_velocity_units_[i].load();
     // Convert to Synapticon's expected unit
     std::int32_t converted = OutputShaftRadPerSToVelocityValue(velocities[i], si_vel);
@@ -608,7 +606,6 @@ std::expected<void, Error> SynapticonBase::SendCommand(
   }
 
   for (std::size_t i = 0; i < num_joints_; ++i) {
-    float mech_red = mechanical_reductions_[i].load();
     std::uint32_t enc_res = encoder_resolutions_[i].load();
 
     switch (control_mode_[i]) {
@@ -862,8 +859,7 @@ void SynapticonBase::ControlLoop(std::stop_token stop_token) {
           const auto& snapshot = in_somanet_snapshot_[joint_idx];
           state_velocities_[joint_idx] = VelocityValueToOutputShaftRadPerS(
               snapshot.velocity_value, si_velocity_units_[joint_idx].load(),
-              mechanical_reductions_[joint_idx].load(),
-              encoder_resolutions_[joint_idx].load());
+              mechanical_reductions_[joint_idx].load());
 
           std::call_once(startup_angle_wrap_flag_[joint_idx], [&]() {
             ComputeStartupWrapOffset(
