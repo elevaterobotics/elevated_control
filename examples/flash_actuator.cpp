@@ -233,11 +233,42 @@ int main(int argc, char** argv) {
   int skipped = 0;
 
   for (const auto& entry : entries) {
-    // 0x2001 — commutation offset; should be re-run
-    // 0x2003:5 — motor phase configuration (inverse vs normal); may change when commutation offset re-runs
-    const bool skip =
-        (entry.index == 0x2001) ||
-        (entry.index == 0x2003 && entry.subindex == 5);
+    const bool skip = [&]() {
+      switch (entry.index) {
+        case 0x2001: // commutation offset; should be re-run
+        case 0x200C:
+        case 0x200D:
+        case 0x2018:
+        case 0x2019:
+        case 0x2050:
+        case 0x2051:
+        case 0x2052:
+        case 0x2053:
+        case 0x2054:
+        case 0x2060:
+        case 0x2150:
+        case 0x2151:
+        case 0x2152:
+        case 0x2500:
+        case 0x60F2:
+          return true;
+        default:
+          break;
+      }
+      const uint8_t s = entry.subindex;
+      // motor phase configuration (inverted vs normal); may change when commutation offset re-runs
+      if (entry.index == 0x2003 && (s == 5 || s == 6)) return true;
+      if (entry.index == 0x2004 && (s == 6 || s == 12)) return true;
+      if (entry.index == 0x2005 && s == 1) return true;
+      if (entry.index == 0x2008 && s == 1) return true;
+      if (entry.index == 0x200A && s >= 3 && s <= 5) return true;
+      if (entry.index == 0x2010 && s >= 13 && s <= 17) return true;
+      if (entry.index == 0x2017 && s == 2) return true;
+      if (entry.index == 0x2023 && s == 4) return true;
+      if (entry.index == 0x2038 && s == 1) return true;
+      if (entry.index == 0x2212 && s == 1) return true;
+      return false;
+    }();
     if (skip) {
       ++skipped;
       std::cout << "  0x" << std::hex << std::setw(4) << std::setfill('0')
