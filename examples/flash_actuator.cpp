@@ -57,6 +57,11 @@ Args ParseArgs(int argc, char** argv) {
       args.csv_path = fs::path(argv[++i]);
     } else if ((arg == "--ethercat-index" || arg == "-e") && i + 1 < argc) {
       args.ethercat_index = std::atoi(argv[++i]);
+      if (args.ethercat_index < 1 || args.ethercat_index > 6) {
+        std::cerr << "Error: --ethercat-index must be between 1 and 6 (got "
+                  << args.ethercat_index << ")\n";
+        std::exit(1);
+      }
     } else if (arg == "--help" || arg == "-h") {
       args.help = true;
     }
