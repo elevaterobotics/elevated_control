@@ -36,6 +36,16 @@ target_include_directories(spring_adjust PRIVATE
 add_executable(single_motor_test single_motor_test.cpp)
 target_link_libraries(single_motor_test PRIVATE ${PROJECT_NAME})
 
+add_executable(flash_actuator flash_actuator.cpp)
+target_link_libraries(flash_actuator PRIVATE ${PROJECT_NAME})
+target_include_directories(flash_actuator PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${PROJECT_SOURCE_DIR}/external/SOEM
+  ${PROJECT_SOURCE_DIR}/external/SOEM/soem
+  ${PROJECT_SOURCE_DIR}/external/SOEM/osal
+  ${PROJECT_SOURCE_DIR}/external/SOEM/osal/linux
+  ${PROJECT_SOURCE_DIR}/external/SOEM/oshw/linux)
+
 set(EXAMPLE_CONFIG_YAMLS
   ${CMAKE_CURRENT_SOURCE_DIR}/joint_limits.yaml
   ${CMAKE_CURRENT_SOURCE_DIR}/elevate_config.yaml
@@ -53,7 +63,7 @@ foreach(exe config_verification basic_usage velocity_commands hand_guided spring
 endforeach()
 
 install(
-	TARGETS config_verification basic_usage velocity_commands hand_guided spring_adjust
+	TARGETS config_verification basic_usage velocity_commands hand_guided spring_adjust flash_actuator
 	RUNTIME DESTINATION examples
 )
 
