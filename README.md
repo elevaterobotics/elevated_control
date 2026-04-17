@@ -35,7 +35,7 @@ cmake ..
 make -j$(nproc)
 ```
 
-Optionally deploy to `CMAKE_INSTALL_PREFIX`, default `/usr/local`:
+Optionally deploy to `CMAKE_INSTALL_PREFIX`, default `/usr/local`. Likely requires `sudo`.
 
 ```bash
 cmake --install .
