@@ -16,6 +16,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -29,9 +30,10 @@ namespace fs = std::filesystem;
 struct SdoEntry {
   uint16_t index;
   uint8_t subindex;
-  enum Type { kInt32, kFloat, kString };
+  enum Type { kInt32, kUint32, kFloat, kString };
   Type type;
   int32_t int_val;
+  uint32_t uint_val;
   float float_val;
   std::string str_val;
 };
@@ -70,7 +72,7 @@ Args ParseArgs(int argc, char** argv) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// CSV parsing (type-preserving: int32 / float / string)
+// CSV parsing (type-preserving: int32 / uint32 / float / string)
 // ───────────────────────────────────────────────────────────────────────────
 
 static inline void Trim(std::string& s) {
@@ -129,13 +131,33 @@ std::vector<SdoEntry> ParseCsv(const fs::path& path) {
 
     bool has_dot = tok_val.find('.') != std::string::npos;
     try {
-      double d = std::stod(tok_val);
       if (has_dot) {
+        double d = std::stod(tok_val);
         entry.type = SdoEntry::kFloat;
         entry.float_val = static_cast<float>(d);
+      } else if (!tok_val.empty() && tok_val[0] == '-') {
+        long long v = std::stoll(tok_val);
+        if (v < std::numeric_limits<int32_t>::min() ||
+            v > std::numeric_limits<int32_t>::max()) {
+          entry.type = SdoEntry::kString;
+          entry.str_val = tok_val;
+        } else {
+          entry.type = SdoEntry::kInt32;
+          entry.int_val = static_cast<int32_t>(v);
+        }
       } else {
-        entry.type = SdoEntry::kInt32;
-        entry.int_val = static_cast<int32_t>(d);
+        unsigned long long u = std::stoull(tok_val);
+        if (u > std::numeric_limits<uint32_t>::max()) {
+          entry.type = SdoEntry::kString;
+          entry.str_val = tok_val;
+        } else if (u <= static_cast<unsigned long long>(
+                       std::numeric_limits<int32_t>::max())) {
+          entry.type = SdoEntry::kInt32;
+          entry.int_val = static_cast<int32_t>(u);
+        } else {
+          entry.type = SdoEntry::kUint32;
+          entry.uint_val = static_cast<uint32_t>(u);
+        }
       }
     } catch (...) {
       entry.type = SdoEntry::kString;
@@ -287,6 +309,12 @@ int main(int argc, char** argv) {
                              sizeof(val), &val, EC_TIMEOUTRXM);
         break;
       }
+      case SdoEntry::kUint32: {
+        uint32_t val = entry.uint_val;
+        result = ec_SDOwrite(slave, entry.index, entry.subindex, FALSE,
+                             sizeof(val), &val, EC_TIMEOUTRXM);
+        break;
+      }
       case SdoEntry::kFloat: {
         float val = entry.float_val;
         result = ec_SDOwrite(slave, entry.index, entry.subindex, FALSE,
@@ -312,6 +340,9 @@ int main(int argc, char** argv) {
       switch (entry.type) {
         case SdoEntry::kInt32:
           std::cout << "= " << std::setw(14) << entry.int_val << "  OK\n";
+          break;
+        case SdoEntry::kUint32:
+          std::cout << "= " << std::setw(14) << entry.uint_val << "  OK\n";
           break;
         case SdoEntry::kFloat:
           std::cout << "= " << std::setw(14) << std::fixed
