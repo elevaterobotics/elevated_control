@@ -34,7 +34,12 @@ class ArmInterface : public SynapticonBase {
  public:
   struct Config : SynapticonBaseConfig {
     std::string elevate_config_yaml = "/home/elevate/Desktop/elevate_config.yaml";
-    Config() { expected_slave_count = kNumJoints; }
+    Config() {
+      // Bus layout: positions 1..kNumJoints are SOMANET joint drives, and the
+      // final slave is the user-interface device (not a joint).
+      expected_slave_count = kNumJoints + 1;
+      num_joints = kNumJoints;
+    }
   };
 
   explicit ArmInterface(const Config& config);
