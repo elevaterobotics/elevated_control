@@ -227,6 +227,7 @@ std::expected<void, Error> ArmInterface::SwitchControlModeImpl(
     }
   }
 
+  bool any_hand_guided = false;
   for (std::size_t i = 0; i < kNumJoints; ++i) {
     threadsafe_commands_positions_[i] =
         std::numeric_limits<float>::quiet_NaN();
@@ -234,7 +235,19 @@ std::expected<void, Error> ArmInterface::SwitchControlModeImpl(
     last_velocity_write_time_ns_[i].store(0, std::memory_order_relaxed);
     threadsafe_commands_efforts_[i] =
         std::numeric_limits<float>::quiet_NaN();
-    hold_in_shutdown_[i] = false;
+    // Pre-latch hand-guided joints in the CiA402 shutdown ladder so the drive
+    // cannot walk up to Operation Enabled (which would release brakes) before
+    // the deadman is pressed. Cleared on the deadman's rising edge in
+    // OnPreStateMachine.
+    const bool is_hand_guided = (new_modes[i] == ControlLevel::kHandGuided);
+    hold_in_shutdown_[i] = is_hand_guided;
+    any_hand_guided = any_hand_guided || is_hand_guided;
+  }
+
+  // Force a rising-edge on the next deadman check after entering hand-guided,
+  // even if the user was already holding the button before the mode switch.
+  if (any_hand_guided) {
+    prev_deadman_pressed_ = false;
   }
 
   for (std::size_t i = 0; i < kNumJoints; ++i) {
