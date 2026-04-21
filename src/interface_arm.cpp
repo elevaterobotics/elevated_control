@@ -227,6 +227,7 @@ std::expected<void, Error> ArmInterface::SwitchControlModeImpl(
     }
   }
 
+  bool any_hand_guided = false;
   for (std::size_t i = 0; i < kNumJoints; ++i) {
     threadsafe_commands_positions_[i] =
         std::numeric_limits<float>::quiet_NaN();
@@ -234,7 +235,19 @@ std::expected<void, Error> ArmInterface::SwitchControlModeImpl(
     last_velocity_write_time_ns_[i].store(0, std::memory_order_relaxed);
     threadsafe_commands_efforts_[i] =
         std::numeric_limits<float>::quiet_NaN();
-    hold_in_shutdown_[i] = false;
+    // Pre-latch hand-guided joints in the CiA402 shutdown ladder so the drive
+    // cannot walk up to Operation Enabled (which would release brakes) before
+    // the deadman is pressed. Cleared on the deadman's rising edge in
+    // OnPreStateMachine.
+    const bool is_hand_guided = (new_modes[i] == ControlLevel::kHandGuided);
+    hold_in_shutdown_[i] = is_hand_guided;
+    any_hand_guided = any_hand_guided || is_hand_guided;
+  }
+
+  // Force a rising-edge on the next deadman check after entering hand-guided,
+  // even if the user was already holding the button before the mode switch.
+  if (any_hand_guided) {
+    prev_deadman_pressed_ = false;
   }
 
   for (std::size_t i = 0; i < kNumJoints; ++i) {
@@ -700,6 +713,18 @@ void ArmInterface::OnPreStateMachine() {
         ModeChangeBlockReason::kStuckFunctionEnable);
   }
 
+  // Rising edge of the deadman in hand-guided: clear the hold-in-shutdown
+  // latches set by OnNormalOperation while the handle was released, so the
+  // CiA402 state machine can walk the drives back up to Operation Enabled.
+  // OnNormalOperation can't do this itself because it only runs once the
+  // drive is already in Operation Enabled.
+  if (control_level_[0] == ControlLevel::kHandGuided &&
+      deadman_pressed_ && !prev_deadman_pressed_) {
+    for (std::size_t i = 0; i < kNumJoints; ++i) {
+      hold_in_shutdown_[i] = false;
+    }
+  }
+
   UpdateDeadmanModeChangeState(control_level_[0], deadman_pressed_,
                                prev_deadman_pressed_, prevent_mode_change_);
 }
@@ -723,6 +748,10 @@ bool ArmInterface::OnNormalOperation(std::size_t joint_idx, bool mode_switch) {
         wrist_roll_dial_filter_.Reset();
         wrist_roll_admittance_filter_.Reset();
       }
+      // Latch shutdown so HandleSwitchOn / HandleEnableOperation keep the
+      // drive out of Operation Enabled while the deadman is released.
+      // Cleared on the rising edge of deadman in OnPreStateMachine.
+      hold_in_shutdown_[joint_idx] = true;
       if (!mode_switch) {
         Stop(out_somanet_[joint_idx], true);
       }

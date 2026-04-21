@@ -62,16 +62,22 @@ inline ControlLevel ToControlLevel(ControlMode mode) {
 }
 
 // Convert arm ControlLevel to base ControlMode.
-// Returns kUndefined for arm-specific modes (kHandGuided, kSpringAdjust).
+// Arm-specific modes (kHandGuided, kSpringAdjust) ultimately drive the
+// SOMANET in profile-torque mode, so they map to ControlMode::kTorque. This
+// lets the base CiA402 state machine progress drives to Operation Enabled
+// and then defer to ArmInterface::OnNormalOperation, which overrides the
+// base dispatch for these joints.
 inline ControlMode ToControlMode(ControlLevel level) {
   switch (level) {
-    case ControlLevel::kUndefined:  return ControlMode::kUndefined;
-    case ControlLevel::kVelocity:   return ControlMode::kVelocity;
-    case ControlLevel::kPosition:   return ControlMode::kPosition;
-    case ControlLevel::kTorque:     return ControlMode::kTorque;
-    case ControlLevel::kQuickStop:  return ControlMode::kQuickStop;
-    default:                        return ControlMode::kUndefined;
+    case ControlLevel::kUndefined:    return ControlMode::kUndefined;
+    case ControlLevel::kVelocity:     return ControlMode::kVelocity;
+    case ControlLevel::kPosition:     return ControlMode::kPosition;
+    case ControlLevel::kTorque:       return ControlMode::kTorque;
+    case ControlLevel::kQuickStop:    return ControlMode::kQuickStop;
+    case ControlLevel::kHandGuided:   return ControlMode::kTorque;
+    case ControlLevel::kSpringAdjust: return ControlMode::kTorque;
   }
+  return ControlMode::kUndefined;
 }
 
 inline bool IsBaseControlMode(ControlLevel level) {
