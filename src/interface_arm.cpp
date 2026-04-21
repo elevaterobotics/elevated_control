@@ -665,7 +665,6 @@ void ArmInterface::OnPreStateMachine() {
   hw_comp_button_ =
       static_cast<float>((*wr_roll_gpio & (1 << 18)) >> 18);
   admittance_button_pressed_ = (*wr_roll_gpio & (1 << 19)) >> 19;
-  spdlog::info("wr_roll_gpio: {}", *wr_roll_gpio);
 
   deadman_pressed_ = hw_function_enable_.load() > 0.5f;
 
@@ -701,6 +700,18 @@ void ArmInterface::OnPreStateMachine() {
         ModeChangeBlockReason::kStuckFunctionEnable);
   }
 
+  // Rising edge of the deadman in hand-guided: clear the hold-in-shutdown
+  // latches set by OnNormalOperation while the handle was released, so the
+  // CiA402 state machine can walk the drives back up to Operation Enabled.
+  // OnNormalOperation can't do this itself because it only runs once the
+  // drive is already in Operation Enabled.
+  if (control_level_[0] == ControlLevel::kHandGuided &&
+      deadman_pressed_ && !prev_deadman_pressed_) {
+    for (std::size_t i = 0; i < kNumJoints; ++i) {
+      hold_in_shutdown_[i] = false;
+    }
+  }
+
   UpdateDeadmanModeChangeState(control_level_[0], deadman_pressed_,
                                prev_deadman_pressed_, prevent_mode_change_);
 }
@@ -724,6 +735,10 @@ bool ArmInterface::OnNormalOperation(std::size_t joint_idx, bool mode_switch) {
         wrist_roll_dial_filter_.Reset();
         wrist_roll_admittance_filter_.Reset();
       }
+      // Latch shutdown so HandleSwitchOn / HandleEnableOperation keep the
+      // drive out of Operation Enabled while the deadman is released.
+      // Cleared on the rising edge of deadman in OnPreStateMachine.
+      hold_in_shutdown_[joint_idx] = true;
       if (!mode_switch) {
         Stop(out_somanet_[joint_idx], true);
       }
