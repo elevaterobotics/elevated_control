@@ -345,7 +345,6 @@ std::expected<void, Error> SynapticonBase::Initialize() {
   });
 
   initialized_ = true;
-  const std::size_t total_slaves = static_cast<std::size_t>(ec_slavecount);
   if (total_slaves == num_joints_) {
     spdlog::info("SynapticonBase initialized with {} joints", num_joints_);
   } else {
