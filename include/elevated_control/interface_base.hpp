@@ -40,6 +40,11 @@ struct InSomanetSnapshot {
 struct SynapticonBaseConfig {
   std::string network_interface = "eno0";
   std::size_t expected_slave_count = 0;  // 0 = auto-detect, >0 = verify
+  // Number of joint slaves on the bus. Joints are assumed to occupy EtherCAT
+  // positions 1..num_joints; any additional trailing slaves (e.g. a
+  // user-interface device) are left alone by the driver. 0 = use total slave
+  // count (every detected slave is treated as a joint).
+  std::size_t num_joints = 0;
   std::string joint_limits_yaml;
 };
 

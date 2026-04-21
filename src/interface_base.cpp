@@ -155,14 +155,24 @@ std::expected<void, Error> SynapticonBase::Initialize() {
         Error{ErrorCode::kEtherCATError, "No EtherCAT slaves found"});
   }
 
-  num_joints_ = static_cast<std::size_t>(ec_slavecount);
+  const std::size_t total_slaves = static_cast<std::size_t>(ec_slavecount);
   if (base_config_.expected_slave_count > 0 &&
-      num_joints_ != base_config_.expected_slave_count) {
+      total_slaves != base_config_.expected_slave_count) {
     ec_close();
     return std::unexpected(Error{
         ErrorCode::kEtherCATError,
         "Expected " + std::to_string(base_config_.expected_slave_count) +
-            " slaves but found " + std::to_string(num_joints_)});
+            " slaves but found " + std::to_string(total_slaves)});
+  }
+  num_joints_ = base_config_.num_joints > 0 ? base_config_.num_joints
+                                            : total_slaves;
+  if (num_joints_ > total_slaves) {
+    ec_close();
+    return std::unexpected(Error{
+        ErrorCode::kEtherCATError,
+        "Configured num_joints (" + std::to_string(num_joints_) +
+            ") exceeds detected slave count (" + std::to_string(total_slaves) +
+            ")"});
   }
 
   // Resize all per-joint containers
@@ -335,7 +345,14 @@ std::expected<void, Error> SynapticonBase::Initialize() {
   });
 
   initialized_ = true;
-  spdlog::info("SynapticonBase initialized with {} joints", num_joints_);
+  if (total_slaves == num_joints_) {
+    spdlog::info("SynapticonBase initialized with {} joints", num_joints_);
+  } else {
+    spdlog::info(
+        "SynapticonBase initialized with {} joints ({} total EtherCAT slaves, "
+        "{} trailing non-joint slave(s))",
+        num_joints_, total_slaves, total_slaves - num_joints_);
+  }
   return {};
 }
 
