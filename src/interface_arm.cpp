@@ -665,6 +665,7 @@ void ArmInterface::OnPreStateMachine() {
   hw_comp_button_ =
       static_cast<float>((*wr_roll_gpio & (1 << 18)) >> 18);
   admittance_button_pressed_ = (*wr_roll_gpio & (1 << 19)) >> 19;
+  spdlog::info("wr_roll_gpio: {}", *wr_roll_gpio);
 
   deadman_pressed_ = hw_function_enable_.load() > 0.5f;
 
