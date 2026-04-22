@@ -35,9 +35,21 @@ int main() {
     return EXIT_FAILURE;
   }
 
+  spdlog::info("Setting spring for a load of 0N");
   // SetSpringSetpoint automatically changes the spring-adjust actuator control mode to kSpringAdjust
   // It will be set to kQuickStop when the motion is complete
   auto sp = arm.SetSpringSetpoint(0.0f /* load in Newtons */);
+  if (!sp) {
+    spdlog::error("SetSpringSetpoint failed: {}", sp.error().message);
+    arm.StopControlLoop();
+    return EXIT_FAILURE;
+  }
+
+  spdlog::info("Spring adjust mode active; holding for 5s");
+  std::this_thread::sleep_for(std::chrono::seconds(5));
+
+  spdlog::info("Setting spring for a different load");
+  sp = arm.SetSpringSetpoint(101.0f /* load in Newtons */);
   if (!sp) {
     spdlog::error("SetSpringSetpoint failed: {}", sp.error().message);
     arm.StopControlLoop();
