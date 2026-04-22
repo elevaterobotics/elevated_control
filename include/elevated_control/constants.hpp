@@ -26,9 +26,9 @@ inline constexpr float kJointLimitTorqueBrakeDistance = 0.09f;
 // Cyclic loop sleep (microseconds)
 inline constexpr unsigned int kCyclicLoopSleepUs = 5000;
 
-// Minimum successful PDO exchanges before joint state readout is trusted.
-// At ~5 ms/cycle, 200 ~ 1 s.
-inline constexpr int kMinPdoExchanges = 200;
+// Minimum successful PDO exchanges before joint state readout is trusted (matches
+// synapticon_ros2_control::SynapticonSystemInterface::read). At ~5 ms/cycle, 200 ≈ 1 s.
+inline constexpr int kMinPdoExchanges = 50;
 
 // Expected EtherCAT slave device name
 inline constexpr std::string_view kExpectedSlaveName = "SOMANET";

@@ -35,6 +35,7 @@ int main() {
     return EXIT_FAILURE;
   }
 
+  spdlog::info("Setting spring for a load of 0N");
   // SetSpringSetpoint automatically changes the spring-adjust actuator control mode to kSpringAdjust
   // It will be set to kQuickStop when the motion is complete
   auto sp = arm.SetSpringSetpoint(0.0f /* load in Newtons */);
